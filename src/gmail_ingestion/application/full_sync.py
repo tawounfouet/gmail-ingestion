@@ -13,6 +13,7 @@ from pyingestkit.artifacts.base import ArtifactStore
 from pyingestkit.retry import RetryPolicy
 
 from gmail_ingestion.api import GmailApiClient, GmailApiError, map_gmail_profile
+from gmail_ingestion.auth.provider import GmailOAuthProvider
 from gmail_ingestion.control import MessageDiscoveryQueue
 from gmail_ingestion.persistence import RawMessageWriter
 
@@ -37,17 +38,7 @@ class GmailClientProtocol(Protocol):
     def get_profile(self) -> Mapping[str, Any]: ...
 
 
-class CredentialStoreProtocol(Protocol):
-    def verify_account_email(self, account_id: str, email_address: str) -> None: ...
-
-
-class OAuthProviderProtocol(Protocol):
-    store: CredentialStoreProtocol
-
-    def load(self, account_id: str | None = None) -> tuple[str, Any]: ...
-
-
-ClientFactory = Callable[..., GmailClientProtocol]
+ClientFactory = Callable[..., GmailApiClient]
 SleepFn = Callable[[float], None]
 
 
