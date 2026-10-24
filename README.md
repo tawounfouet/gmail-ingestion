@@ -22,6 +22,27 @@ MIME / Attachment Analysis
 Manifest v1
 ```
 
+## Release status
+
+The stable candidate is automatically qualified:
+
+```text
+Python 3.11       PASS
+Python 3.12       PASS
+Python 3.13       PASS
+pytest            37/37 PASS
+Ruff              PASS
+mypy strict       PASS
+wheel + sdist     PASS
+twine check       PASS
+clean install     PASS
+PyIngestKit       v2.1.0 verified
+```
+
+The **only remaining stable-release gate** is a real Gmail test mailbox executed through this
+package's own Desktop OAuth and Gmail API client path. The connected Gmail integration used for
+source-shape validation is intentionally not treated as a substitute.
+
 ## Stable Snapshot Foundation
 
 ### OAuth + Profile
@@ -88,7 +109,7 @@ python -m pip install -e ".[dev]"
 gmail-ingest version
 ```
 
-Expected on this release branch:
+Expected:
 
 ```text
 0.1.0
@@ -158,6 +179,16 @@ qualification/v0.1.0-live-evidence.json
 
 Do not commit `credentials.json`, local token files, mailbox RAW or qualification artifact roots.
 
+## Distribution candidate
+
+```text
+gmail_ingestion-0.1.0-py3-none-any.whl
+SHA-256 da9cc008d257274b4ea1c6188121aa75acb1939e92697555b28fcee82d5a3bc1
+
+gmail_ingestion-0.1.0.tar.gz
+SHA-256 a77c708076ffe02f3989edd65399c7dcfc327eb0cf88868991d7f1b02605251f
+```
+
 ## Quality and packaging
 
 ```bash
@@ -167,9 +198,6 @@ pytest
 python -m build
 python -m twine check dist/*
 ```
-
-CI qualifies Python 3.11, 3.12 and 3.13, builds wheel/sdist, checks clean wheel installation and
-records SHA-256 checksums.
 
 ## Release documentation
 
@@ -188,7 +216,7 @@ records SHA-256 checksums.
 0.1.0b1    Full Message Snapshot                ✅
 0.1.0b2    MIME + Attachments + Manifest        ✅
 0.1.0rc1   Snapshot Qualification               ✅ automated qualified
-0.1.0      Snapshot Foundation Stable           ← release branch / live gate
+0.1.0      Snapshot Foundation Stable           ← automated GO / live E2E pending
 0.2.0      Normalized Dataset                   next after stable publication
 ```
 

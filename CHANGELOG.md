@@ -14,10 +14,27 @@ The project follows Semantic Versioning with pre-release milestones during the p
 - record Python/PyIngestKit compatibility and no-migration promotion notes;
 - add a redacted real-mailbox qualification script.
 
+### Automated qualification
+
+The release branch is green on Python 3.11, 3.12 and 3.13. The exact stable branch candidate
+`800647747f8efeb48290e536f72cdc319f57e034` passed:
+
+```text
+37/37 tests
+Ruff
+mypy strict
+CLI smoke
+wheel + sdist build
+twine check
+clean wheel install
+PyIngestKit 2.1.0 verification
+SHA-256 generation
+```
+
 ### Release gate
 
-The release branch must pass automated CI and the package's real Gmail test-mailbox gate before
-merge, tag or GitHub release.
+The remaining gate is the package's own real Gmail Desktop OAuth E2E. Until it passes, merge,
+`v0.1.0` tag and GitHub stable release remain intentionally blocked.
 
 ## 0.1.0rc1 — Snapshot Qualification
 
