@@ -2,7 +2,7 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Current development milestone:** `GMAIL_04 — 0.1.0b2 MIME + Attachments + Manifest`
+> **Current development milestone:** `0.1.0rc1 — Snapshot Qualification`
 
 The project turns a Gmail mailbox into a controlled dataset pipeline rather than a one-off email export.
 
@@ -110,9 +110,9 @@ manifest.json
 The binary attachment path is deliberately separate from analytical artifacts. Attachment download
 is **disabled by default**; metadata-only mode is the safe baseline.
 
-> **Release status:** `0.1.0a1`, `0.1.0a2`, `0.1.0b1` and `0.1.0b2` are implemented and
-> CI-qualified once the current milestone pipeline is green. They remain untagged until the
-> dedicated real-mailbox acceptance checks are executed.
+> **Release status:** the complete Snapshot Foundation is now assembled as `0.1.0rc1` and
+> automatically qualified on Python 3.11, 3.12 and 3.13. The real-mailbox Gmail acceptance gate
+> remains pending before `0.1.0` stable.
 
 ## Requirements
 
@@ -258,6 +258,35 @@ failure remains structured in `manifest.json`.
 
 See [`docs/runbooks/MIME_ATTACHMENTS_MANIFEST.md`](docs/runbooks/MIME_ATTACHMENTS_MANIFEST.md).
 
+## 0.1.0rc1 qualification
+
+The release candidate adds a cross-cutting qualification suite covering:
+
+```text
+OAuth refresh
+Profile
+SYSTEM + USER labels
+empty mailbox
+plain text
+HTML
+multipart
+shared threads
+non-UTF-8 charset
+message retry
+attachment retry
+SHA-256
+binary isolation
+manifest integrity
+1,001-message sample
+3 discovery pages
+secret non-leakage
+```
+
+The automated matrix is green on Python 3.11, 3.12 and 3.13 with **36/36 tests passing**.
+
+The remaining release gate is the dedicated real Gmail mailbox procedure documented in
+[`docs/runbooks/SNAPSHOT_QUALIFICATION_RC1.md`](docs/runbooks/SNAPSHOT_QUALIFICATION_RC1.md).
+
 ## Credential security
 
 The local credential store is namespaced by opaque `account_id`. OAuth tokens are never included
@@ -292,9 +321,9 @@ GitHub Actions executes the gate on Python 3.11, 3.12 and 3.13 without real Gmai
 0.1.0a1    OAuth + Profile                            ✅ implemented / E2E pending
 0.1.0a2    Labels                                     ✅ implemented / E2E pending
 0.1.0b1    Full Message Snapshot                      ✅ implemented / E2E pending
-0.1.0b2    MIME + Attachments + Manifest              ← current / E2E pending
-0.1.0rc1   Snapshot Qualification                     next
-0.1.0      Snapshot Foundation Stable
+0.1.0b2    MIME + Attachments + Manifest              ✅ implemented / CI qualified
+0.1.0rc1   Snapshot Qualification                     ← current / automated qualified
+0.1.0      Snapshot Foundation Stable                 next / real Gmail E2E gate
 0.2.0      Normalized Dataset
 0.3.0      Search / Date Range / Filtered Ingestion
 0.4.0      Incremental History Sync
