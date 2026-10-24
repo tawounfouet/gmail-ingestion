@@ -1,6 +1,7 @@
 """CLI command for Gmail profile retrieval."""
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -11,19 +12,28 @@ from gmail_ingestion.config import default_credential_dir
 
 from .render import render_account
 
+_DEFAULT_CREDENTIAL_DIR = default_credential_dir()
+
 
 def profile_command(
-    account_id: str | None = typer.Option(
-        None,
-        "--account-id",
-        help="Opaque local account ID. Defaults to the active account.",
-    ),
-    credential_dir: Path = typer.Option(
-        default_credential_dir(),
-        "--credential-dir",
-        help="Private local credential store.",
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Render the Gmail profile as JSON."),
+    account_id: Annotated[
+        str | None,
+        typer.Option(
+            "--account-id",
+            help="Opaque local account ID. Defaults to the active account.",
+        ),
+    ] = None,
+    credential_dir: Annotated[
+        Path,
+        typer.Option(
+            "--credential-dir",
+            help="Private local credential store.",
+        ),
+    ] = _DEFAULT_CREDENTIAL_DIR,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Render the Gmail profile as JSON."),
+    ] = False,
 ) -> None:
     """Fetch users.getProfile using stored reusable credentials."""
     try:

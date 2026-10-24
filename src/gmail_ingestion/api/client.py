@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, Mapping, cast
+from collections.abc import Mapping
+from typing import Any, cast
 
 
 class GmailApiError(RuntimeError):

@@ -1,6 +1,7 @@
 """CLI command for interactive Gmail authorization."""
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -11,24 +12,36 @@ from gmail_ingestion.config import default_credential_dir
 
 from .render import render_account
 
+_DEFAULT_CLIENT_SECRETS = Path("credentials.json")
+_DEFAULT_CREDENTIAL_DIR = default_credential_dir()
+
 
 def auth_command(
-    client_secrets: Path = typer.Option(
-        Path("credentials.json"),
-        "--client-secrets",
-        help="Google OAuth Desktop client JSON file.",
-    ),
-    credential_dir: Path = typer.Option(
-        default_credential_dir(),
-        "--credential-dir",
-        help="Private local credential store.",
-    ),
-    no_browser: bool = typer.Option(
-        False,
-        "--no-browser",
-        help="Do not automatically open the authorization URL in a browser.",
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Render the Gmail profile as JSON."),
+    client_secrets: Annotated[
+        Path,
+        typer.Option(
+            "--client-secrets",
+            help="Google OAuth Desktop client JSON file.",
+        ),
+    ] = _DEFAULT_CLIENT_SECRETS,
+    credential_dir: Annotated[
+        Path,
+        typer.Option(
+            "--credential-dir",
+            help="Private local credential store.",
+        ),
+    ] = _DEFAULT_CREDENTIAL_DIR,
+    no_browser: Annotated[
+        bool,
+        typer.Option(
+            "--no-browser",
+            help="Do not automatically open the authorization URL in a browser.",
+        ),
+    ] = False,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Render the Gmail profile as JSON."),
+    ] = False,
 ) -> None:
     """Authorize a Gmail mailbox with the read-only OAuth scope."""
     try:
