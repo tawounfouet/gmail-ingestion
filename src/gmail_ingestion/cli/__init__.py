@@ -2,7 +2,10 @@
 
 import typer
 
-from ._version import __version__
+from gmail_ingestion._version import __version__
+
+from .auth import auth_command
+from .profile import profile_command
 
 app = typer.Typer(
     name="gmail-ingest",
@@ -16,7 +19,13 @@ def main() -> None:
     """Gmail Ingestion command-line interface."""
 
 
-@app.command()
-def version() -> None:
+@app.command("version")
+def version_command() -> None:
     """Print the installed Gmail Ingestion version."""
     typer.echo(__version__)
+
+
+app.command("auth")(auth_command)
+app.command("profile")(profile_command)
+
+__all__ = ["app"]
