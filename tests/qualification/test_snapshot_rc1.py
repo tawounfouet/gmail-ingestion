@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -89,6 +90,7 @@ def _provider(
     )
     store.set_active_account(account_id)
     state = _RefreshState()
+    original_import = importlib.import_module
 
     class _CredentialsClass:
         @staticmethod
@@ -106,7 +108,7 @@ def _provider(
             return SimpleNamespace(Credentials=_CredentialsClass)
         if name == "google.auth.transport.requests":
             return SimpleNamespace(Request=lambda: object())
-        raise AssertionError(name)
+        return original_import(name)
 
     monkeypatch.setattr("gmail_ingestion.auth.provider.importlib.import_module", fake_import)
     settings = OAuthSettings(credential_dir=store.root)
