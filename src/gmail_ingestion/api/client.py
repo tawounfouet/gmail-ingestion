@@ -6,6 +6,7 @@ import importlib
 from collections.abc import Mapping
 from typing import Any, cast
 
+from .attachments import GmailAttachmentsApi
 from .client_error import GmailApiError
 from .labels import GmailLabelsApi
 from .messages import GmailMessagesApi
@@ -30,6 +31,7 @@ class GmailApiClient:
             )
         self.labels = GmailLabelsApi(self._service)
         self.messages = GmailMessagesApi(self._service)
+        self.attachments = GmailAttachmentsApi(self._service)
 
     def get_profile(self) -> Mapping[str, Any]:
         """Call users.getProfile for the authenticated mailbox."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -24,12 +24,25 @@ class RawMessageWriter:
 
     def exists(self, run_id: UUID, message_id: str) -> bool:
         """Return whether immutable RAW already exists for this run/message."""
-        relative_path = f"raw/{safe_component(self._name(message_id))}"
         try:
-            self.store.read_bytes(self.store.uri_for(self.job_id, run_id, relative_path))
-        except StorageError:
+            self.read(run_id, message_id)
+        except (StorageError, ValueError):
             return False
         return True
+
+    def read(self, run_id: UUID, message_id: str) -> Mapping[str, Any]:
+        """Read and validate one persisted RAW message JSON object."""
+        relative_path = f"raw/{safe_component(self._name(message_id))}"
+        raw = self.store.read_bytes(self.store.uri_for(self.job_id, run_id, relative_path))
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"RAW Gmail message {message_id!r} is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"RAW Gmail message {message_id!r} must be a JSON object")
+        if payload.get("id") != message_id:
+            raise ValueError(f"RAW Gmail message {message_id!r} has an inconsistent source id")
+        return cast(Mapping[str, Any], payload)
 
     def write(
         self,

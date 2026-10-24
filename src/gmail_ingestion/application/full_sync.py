@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from threading import local
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
@@ -15,7 +16,15 @@ from pyingestkit.retry import RetryPolicy
 from gmail_ingestion.api import GmailApiClient, GmailApiError, map_gmail_profile
 from gmail_ingestion.auth.provider import GmailOAuthProvider
 from gmail_ingestion.control import MessageDiscoveryQueue
+from gmail_ingestion.domain import MessageFetchStatus
+from gmail_ingestion.manifest import GmailRunManifest, ManifestIssue, ManifestWriter
 from gmail_ingestion.persistence import RawMessageWriter
+
+from .message_processing import (
+    AttachmentClientProtocol,
+    MessagePostProcessor,
+    MessageProcessingSummary,
+)
 
 
 class MessagesApiProtocol(Protocol):
@@ -32,7 +41,7 @@ class MessagesApiProtocol(Protocol):
     def get_message(self, message_id: str, *, format: str = "full") -> Mapping[str, Any]: ...
 
 
-class GmailClientProtocol(Protocol):
+class GmailClientProtocol(AttachmentClientProtocol, Protocol):
     messages: MessagesApiProtocol
 
     def get_profile(self) -> Mapping[str, Any]: ...
@@ -54,11 +63,21 @@ class FullSnapshotResult:
     fetched_count: int
     failed_count: int
     raw_message_count: int
+    mime_messages_processed: int
+    mime_messages_failed: int
+    mime_parts: int
+    attachments_detected: int
+    attachments_fetched: int
+    attachments_failed: int
+    attachments_skipped: int
+    bytes_downloaded: int
+    manifest_status: str
+    manifest_path: str
     resumed: bool
 
 
 class FullMessageSnapshot:
-    """Execute GMAIL_03 discovery, hydration, RAW persistence and resume."""
+    """Execute GMAIL_03/GMAIL_04 snapshot, MIME, attachment and manifest flow."""
 
     def __init__(
         self,
@@ -82,14 +101,18 @@ class FullMessageSnapshot:
         max_results: int = 500,
         max_workers: int = 4,
         max_attempts: int = 5,
+        download_attachments: bool = False,
+        max_attachment_bytes: int | None = None,
     ) -> FullSnapshotResult:
-        """Run or resume a full Gmail message snapshot."""
+        """Run or resume a full Gmail snapshot through MIME/attachment analysis."""
         if not 1 <= max_results <= 500:
             raise ValueError("max_results must be between 1 and 500")
         if not 1 <= max_workers <= 32:
             raise ValueError("max_workers must be between 1 and 32")
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
+        if max_attachment_bytes is not None and max_attachment_bytes < 1:
+            raise ValueError("max_attachment_bytes must be >= 1 when provided")
 
         resolved, credentials = self.provider.load(account_id)
         source_client = cast(GmailClientProtocol, self.client_factory(credentials=credentials))
@@ -97,73 +120,171 @@ class FullMessageSnapshot:
         self.provider.store.verify_account_email(resolved, profile.email_address)
 
         actual_run_id = run_id or uuid4()
-        queue = MessageDiscoveryQueue.load_or_create(
-            self.artifact_store,
+        manifest_writer = ManifestWriter(self.artifact_store)
+        manifest_writer.validate_resume_settings(
             actual_run_id,
-            resolved,
-            profile.history_id,
+            include_spam_trash=include_spam_trash,
+            download_attachments=download_attachments,
+            max_attachment_bytes=max_attachment_bytes,
         )
+        existing_started_at = manifest_writer.existing_started_at(actual_run_id)
+        started_at = existing_started_at or datetime.now(UTC)
+        queue: MessageDiscoveryQueue | None = None
 
-        if not queue.discovery_complete:
-            self._discover(
-                source_client,
-                queue,
-                include_spam_trash=include_spam_trash,
-                max_results=max_results,
+        try:
+            queue = MessageDiscoveryQueue.load_or_create(
+                self.artifact_store,
+                actual_run_id,
+                resolved,
+                profile.history_id,
+            )
+            resumed = queue.loaded_existing or existing_started_at is not None
+            manifest_writer.write(
+                self._manifest(
+                    run_id=actual_run_id,
+                    account_id=resolved,
+                    started_at=started_at,
+                    completed_at=None,
+                    status="RUNNING",
+                    queue=queue,
+                    include_spam_trash=include_spam_trash,
+                    download_attachments=download_attachments,
+                    max_attachment_bytes=max_attachment_bytes,
+                    resumed=resumed,
+                )
             )
 
-        writer = RawMessageWriter(self.artifact_store)
-        recovered_existing = 0
-        for record in queue.pending():
-            if writer.exists(actual_run_id, record.message_id):
-                queue.mark_fetched(record.message_id, attempts=0)
-                recovered_existing += 1
-        if recovered_existing:
-            queue.persist()
+            if not queue.discovery_complete:
+                self._discover(
+                    source_client,
+                    queue,
+                    include_spam_trash=include_spam_trash,
+                    max_results=max_results,
+                )
 
-        retry = self._retry_policy(max_attempts)
-        workers = _WorkerClientPool(self.client_factory, credentials)
-        pending = queue.pending()
-        if pending:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures: dict[Future[tuple[Mapping[str, Any], int]], str] = {
-                    executor.submit(
-                        _fetch_with_retry,
-                        workers,
-                        record.message_id,
-                        retry,
-                    ): record.message_id
-                    for record in pending
-                }
-                for future in as_completed(futures):
-                    message_id = futures[future]
-                    try:
-                        payload, attempts = future.result()
-                    except MessageFetchFailure as exc:
-                        queue.mark_failed(
-                            message_id,
-                            attempts=exc.attempts,
-                            error_code="GMAIL_API_ERROR",
-                            error_message=str(exc),
-                        )
+            writer = RawMessageWriter(self.artifact_store)
+            recovered_existing = 0
+            for record in queue.pending():
+                if writer.exists(actual_run_id, record.message_id):
+                    queue.mark_fetched(record.message_id, attempts=0)
+                    recovered_existing += 1
+            if recovered_existing:
+                queue.persist()
+
+            retry = self._retry_policy(max_attempts)
+            workers = _WorkerClientPool(self.client_factory, credentials)
+            pending = queue.pending()
+            if pending:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures: dict[Future[tuple[Mapping[str, Any], int]], str] = {
+                        executor.submit(
+                            _fetch_with_retry,
+                            workers,
+                            record.message_id,
+                            retry,
+                        ): record.message_id
+                        for record in pending
+                    }
+                    for future in as_completed(futures):
+                        message_id = futures[future]
+                        try:
+                            payload, attempts = future.result()
+                        except MessageFetchFailure as exc:
+                            queue.mark_failed(
+                                message_id,
+                                attempts=exc.attempts,
+                                error_code="GMAIL_API_ERROR",
+                                error_message=str(exc),
+                            )
+                            queue.persist()
+                            continue
+
+                        writer.write(actual_run_id, message_id, payload)
+                        queue.mark_fetched(message_id, attempts=attempts)
                         queue.persist()
-                        continue
 
-                    writer.write(actual_run_id, message_id, payload)
-                    queue.mark_fetched(message_id, attempts=attempts)
-                    queue.persist()
+            processing = MessagePostProcessor(
+                self.artifact_store,
+                source_client,
+                retry,
+                download_attachments=download_attachments,
+                max_attachment_bytes=max_attachment_bytes,
+            ).process(actual_run_id, resolved, queue.records)
 
-        return FullSnapshotResult(
-            run_id=actual_run_id,
-            account_id=resolved,
-            history_start=queue.history_start,
-            pages_scanned=queue.pages_scanned,
-            discovered_count=len(queue.records),
-            fetched_count=queue.fetched_count,
-            failed_count=queue.failed_count,
-            raw_message_count=queue.fetched_count,
-            resumed=queue.loaded_existing,
-        )
+            message_errors = _message_fetch_issues(queue)
+            errors = message_errors + processing.errors
+            status = (
+                "PARTIAL"
+                if queue.failed_count
+                or processing.mime_messages_failed
+                or processing.attachments_failed
+                else "COMPLETED"
+            )
+            completed_at = datetime.now(UTC)
+            final_manifest = self._manifest(
+                run_id=actual_run_id,
+                account_id=resolved,
+                started_at=started_at,
+                completed_at=completed_at,
+                status=status,
+                queue=queue,
+                include_spam_trash=include_spam_trash,
+                download_attachments=download_attachments,
+                max_attachment_bytes=max_attachment_bytes,
+                resumed=resumed,
+                processing=processing,
+                errors=errors,
+                warnings=processing.warnings,
+            )
+            manifest_path = manifest_writer.write(final_manifest)
+
+            return FullSnapshotResult(
+                run_id=actual_run_id,
+                account_id=resolved,
+                history_start=queue.history_start,
+                pages_scanned=queue.pages_scanned,
+                discovered_count=len(queue.records),
+                fetched_count=queue.fetched_count,
+                failed_count=queue.failed_count,
+                raw_message_count=queue.fetched_count,
+                mime_messages_processed=processing.mime_messages_processed,
+                mime_messages_failed=processing.mime_messages_failed,
+                mime_parts=processing.mime_parts,
+                attachments_detected=processing.attachments_detected,
+                attachments_fetched=processing.attachments_fetched,
+                attachments_failed=processing.attachments_failed,
+                attachments_skipped=processing.attachments_skipped,
+                bytes_downloaded=processing.bytes_downloaded,
+                manifest_status=status,
+                manifest_path=manifest_path,
+                resumed=resumed,
+            )
+        except Exception as exc:
+            if queue is not None:
+                issue = ManifestIssue(
+                    scope="run",
+                    code="SNAPSHOT_FATAL_ERROR",
+                    message=str(exc),
+                )
+                try:
+                    manifest_writer.write(
+                        self._manifest(
+                            run_id=actual_run_id,
+                            account_id=resolved,
+                            started_at=started_at,
+                            completed_at=datetime.now(UTC),
+                            status="FAILED",
+                            queue=queue,
+                            include_spam_trash=include_spam_trash,
+                            download_attachments=download_attachments,
+                            max_attachment_bytes=max_attachment_bytes,
+                            resumed=queue.loaded_existing or existing_started_at is not None,
+                            errors=(issue,),
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - preserve the original fatal exception
+                    pass
+            raise
 
     def _discover(
         self,
@@ -202,6 +323,62 @@ class FullMessageSnapshot:
         if self.retry_sleep is not None:
             kwargs["sleep"] = self.retry_sleep
         return RetryPolicy(**kwargs)
+
+    def _manifest(
+        self,
+        *,
+        run_id: UUID,
+        account_id: str,
+        started_at: datetime,
+        completed_at: datetime | None,
+        status: str,
+        queue: MessageDiscoveryQueue,
+        include_spam_trash: bool,
+        download_attachments: bool,
+        max_attachment_bytes: int | None,
+        resumed: bool,
+        processing: MessageProcessingSummary | None = None,
+        errors: tuple[ManifestIssue, ...] = (),
+        warnings: tuple[ManifestIssue, ...] = (),
+    ) -> GmailRunManifest:
+        return GmailRunManifest(
+            run_id=run_id,
+            account_id=account_id,
+            started_at=started_at,
+            completed_at=completed_at,
+            status=status,
+            history_start=queue.history_start,
+            include_spam_trash=include_spam_trash,
+            download_attachments=download_attachments,
+            max_attachment_bytes=max_attachment_bytes,
+            messages_discovered=len(queue.records),
+            messages_fetched=queue.fetched_count,
+            messages_failed=queue.failed_count,
+            mime_parts=processing.mime_parts if processing is not None else 0,
+            mime_messages_processed=(
+                processing.mime_messages_processed if processing is not None else 0
+            ),
+            mime_messages_failed=(
+                processing.mime_messages_failed if processing is not None else 0
+            ),
+            attachments_detected=(
+                processing.attachments_detected if processing is not None else 0
+            ),
+            attachments_fetched=(
+                processing.attachments_fetched if processing is not None else 0
+            ),
+            attachments_failed=(
+                processing.attachments_failed if processing is not None else 0
+            ),
+            attachments_skipped=(
+                processing.attachments_skipped if processing is not None else 0
+            ),
+            bytes_downloaded=processing.bytes_downloaded if processing is not None else 0,
+            resumed=resumed,
+            errors=errors,
+            warnings=warnings,
+            storage_paths=_storage_paths(self.artifact_store, run_id),
+        )
 
 
 class MessageFetchFailure(RuntimeError):
@@ -270,3 +447,31 @@ def _next_page_token(page: Mapping[str, Any]) -> str | None:
     if not isinstance(value, str) or not value:
         raise GmailApiError("Gmail messages.list returned an invalid nextPageToken")
     return value
+
+
+def _message_fetch_issues(queue: MessageDiscoveryQueue) -> tuple[ManifestIssue, ...]:
+    issues: list[ManifestIssue] = []
+    for record in queue.records.values():
+        if record.fetch_status is not MessageFetchStatus.FAILED:
+            continue
+        issues.append(
+            ManifestIssue(
+                scope="message",
+                code=record.error_code or "MESSAGE_FETCH_ERROR",
+                message=record.error_message or "Gmail message fetch failed",
+                message_id=record.message_id,
+            )
+        )
+    return tuple(issues)
+
+
+def _storage_paths(store: ArtifactStore, run_id: UUID) -> dict[str, str]:
+    return {
+        "manifest": str(store.uri_for("gmail.messages", run_id, "manifest.json")),
+        "message_discovery": str(
+            store.uri_for("gmail.messages", run_id, "control/message_discovery.json")
+        ),
+        "raw_messages": str(store.uri_for("gmail.messages", run_id, "raw")),
+        "mime_analysis": str(store.uri_for("gmail.messages", run_id, "candidate/mime")),
+        "attachment_binaries": str(store.uri_for("gmail.attachments", run_id, "raw")),
+    }

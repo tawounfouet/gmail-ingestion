@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -49,6 +49,7 @@ class GmailRunManifest:
     history_start: str | None
     include_spam_trash: bool
     download_attachments: bool
+    max_attachment_bytes: int | None
     messages_discovered: int
     messages_fetched: int
     messages_failed: int
@@ -82,6 +83,7 @@ class GmailRunManifest:
             "message_format": "full",
             "include_spam_trash": self.include_spam_trash,
             "download_attachments": self.download_attachments,
+            "max_attachment_bytes": self.max_attachment_bytes,
             "input_checkpoint": None,
             "candidate_checkpoint": self.history_start,
             "committed_checkpoint": None,
@@ -112,7 +114,7 @@ class ManifestWriter:
         self.store = store
         self.job_id = job_id
 
-    def existing_started_at(self, run_id: UUID) -> datetime | None:
+    def load_payload(self, run_id: UUID) -> dict[str, Any] | None:
         try:
             raw = self.store.read_bytes(
                 self.store.uri_for(self.job_id, run_id, _MANIFEST_PATH)
@@ -123,7 +125,11 @@ class ManifestWriter:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return None
-        if not isinstance(payload, dict):
+        return cast(dict[str, Any], payload) if isinstance(payload, dict) else None
+
+    def existing_started_at(self, run_id: UUID) -> datetime | None:
+        payload = self.load_payload(run_id)
+        if payload is None:
             return None
         value = payload.get("started_at")
         if not isinstance(value, str):
@@ -133,6 +139,28 @@ class ManifestWriter:
         except ValueError:
             return None
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+    def validate_resume_settings(
+        self,
+        run_id: UUID,
+        *,
+        include_spam_trash: bool,
+        download_attachments: bool,
+        max_attachment_bytes: int | None,
+    ) -> None:
+        payload = self.load_payload(run_id)
+        if payload is None:
+            return
+        expected = {
+            "include_spam_trash": include_spam_trash,
+            "download_attachments": download_attachments,
+            "max_attachment_bytes": max_attachment_bytes,
+        }
+        for key, value in expected.items():
+            if payload.get(key) != value:
+                raise ValueError(
+                    f"Cannot resume run {run_id}: setting {key!r} differs from the manifest"
+                )
 
     def write(self, manifest: GmailRunManifest) -> str:
         path = self.store.write_json(
