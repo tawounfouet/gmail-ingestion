@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -38,7 +37,6 @@ class MessageAnalysisWriter:
                 "schema_version": 1,
                 "account_id": account_id,
                 "message_id": message_id,
-                "processed_at": datetime.now(UTC).isoformat(),
                 "headers": [
                     {
                         "index": entry.index,
