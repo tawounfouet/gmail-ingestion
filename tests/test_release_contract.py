@@ -1,7 +1,6 @@
 from importlib.metadata import requires, version
 
 import gmail_ingestion
-
 from gmail_ingestion.config import GMAIL_READONLY_SCOPE
 
 
