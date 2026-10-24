@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -88,5 +87,5 @@ class LabelsParquetWriter:
         )
         return LabelsWriteResult(
             parquet_path=path,
-            schema_path=cast(Path, schema_artifact.local_path),
+            schema_path=schema_artifact.local_path,
         )
