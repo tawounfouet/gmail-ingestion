@@ -4,6 +4,21 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.1.0 — Unreleased stable promotion
+
+### Changed
+
+- promote the qualified Snapshot Foundation contract without Gmail semantic drift;
+- pin PyIngestKit from moving `main` to stable `v2.1.0`;
+- add clean wheel/sdist build and SHA-256 release evidence;
+- record Python/PyIngestKit compatibility and no-migration promotion notes;
+- add a redacted real-mailbox qualification script.
+
+### Release gate
+
+The release branch must pass automated CI and the package's real Gmail test-mailbox gate before
+merge, tag or GitHub release.
+
 ## 0.1.0rc1 — Snapshot Qualification
 
 ### Added
@@ -19,16 +34,10 @@ The project follows Semantic Versioning with pre-release milestones during the p
 - secret-leak assertions across generated run artifacts;
 - dedicated RC1 real-mailbox qualification runbook.
 
-### Changed
-
-- package version advanced from `0.1.0b2` to `0.1.0rc1`;
-- README and examples now describe the complete Snapshot Foundation candidate.
-
 ### Qualification status
 
-Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict reports no issues across 46 source files.
-
-The real Gmail mailbox E2E remains the release gate before `0.1.0` stable.
+Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict
+reports no issues across 46 source files.
 
 ## 0.1.0b2 — MIME + Attachments + Manifest
 

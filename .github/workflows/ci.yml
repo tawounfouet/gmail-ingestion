@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release/**"
   pull_request:
     branches: [main]
 
@@ -44,9 +46,67 @@ jobs:
       - name: CLI smoke test
         run: |
           gmail-ingest --help
-          gmail-ingest version
+          test "$(gmail-ingest version)" = "0.1.0"
           gmail-ingest auth --help
           gmail-ingest profile --help
           gmail-ingest labels --help
           gmail-ingest snapshot --help
           python -m gmail_ingestion --help
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "build>=1.2" "twine>=6"
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Validate distributions
+        run: python -m twine check dist/*
+
+      - name: Record SHA-256
+        shell: bash
+        run: |
+          sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS-v0.1.0
+          cat dist/SHA256SUMS-v0.1.0
+
+      - name: Clean wheel install
+        shell: bash
+        run: |
+          python -m venv /tmp/gmail-ingestion-wheel
+          /tmp/gmail-ingestion-wheel/bin/python -m pip install --upgrade pip
+          wheel="$(ls dist/gmail_ingestion-0.1.0-*.whl | head -n 1)"
+          /tmp/gmail-ingestion-wheel/bin/python -m pip install "$wheel"
+          test "$(/tmp/gmail-ingestion-wheel/bin/gmail-ingest version)" = "0.1.0"
+          /tmp/gmail-ingestion-wheel/bin/python - <<'PY'
+          from importlib.metadata import requires, version
+
+          import gmail_ingestion
+
+          assert gmail_ingestion.__version__ == "0.1.0"
+          assert version("pyingestkit") == "2.1.0"
+          requirements = requires("gmail-ingestion") or []
+          assert any(
+              "pyingestkit @ git+https://github.com/tawounfouet/pyingestkit.git@v2.1.0" in item
+              for item in requirements
+          )
+          PY
+
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-ingestion-v0.1.0-dist
+          path: dist/
+          if-no-files-found: error
