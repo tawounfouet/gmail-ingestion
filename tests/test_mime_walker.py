@@ -47,7 +47,7 @@ def test_recursive_mime_walk_extracts_bodies_addresses_and_attachments() -> None
                             ],
                             "body": {
                                 "size": 12,
-                                "data": _b64("<b>hello</b>".encode()),
+                                "data": _b64(b"<b>hello</b>"),
                             },
                         },
                     ],
