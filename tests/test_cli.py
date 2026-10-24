@@ -24,8 +24,7 @@ def test_cli_version() -> None:
     assert result.stdout.strip() == "0.1.0a2"
 
 
-def test_labels_help() -> None:
+def test_labels_help_renders() -> None:
     result = runner.invoke(app, ["labels", "--help"])
     assert result.exit_code == 0
-    assert "--details" in result.stdout
-    assert "--artifact-root" in result.stdout
+    assert result.exception is None

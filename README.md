@@ -2,7 +2,7 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Current milestone:** `GMAIL_01 — 0.1.0a1 OAuth + Profile`
+> **Current development milestone:** `GMAIL_02 — 0.1.0a2 Labels`
 
 The project turns a Gmail mailbox into a controlled dataset pipeline rather than a one-off email export.
 
@@ -26,9 +26,10 @@ Reconciliation
 
 ## Current capability
 
-`0.1.0a1` establishes the first real Gmail source connection:
+The codebase currently contains two Gmail vertical slices:
 
 ```text
+0.1.0a1 — OAuth + Profile
 OAuth Desktop
    ↓
 gmail.readonly
@@ -40,9 +41,27 @@ transparent refresh
 users.getProfile(userId="me")
    ↓
 GmailAccount
+
+0.1.0a2 — Labels
+stored Gmail credentials
+   ↓
+users.labels.list
+   ↓
+users.labels.get enrichment
+   ↓
+immutable RAW JSON through PyIngestKit
+   ↓
+14-column normalized labels Dataset
+   ↓
+candidate/labels.parquet
+   +
+candidate/labels.schema.json
 ```
 
-No Gmail write scope is requested. Message extraction starts in a later milestone.
+No Gmail write scope is requested. Message extraction starts in `0.1.0b1`.
+
+> Release note: `0.1.0a1` and `0.1.0a2` are implemented and CI-qualified, but are not tagged
+> until the corresponding real-mailbox OAuth/API acceptance checks have been executed.
 
 ## Requirements
 
@@ -71,15 +90,15 @@ The file is ignored by Git.
 gmail-ingest auth
 ```
 
-The command opens Google's consent flow and requests exactly:
+The command requests exactly:
 
 ```text
 https://www.googleapis.com/auth/gmail.readonly
 ```
 
 After consent, the connector verifies the mailbox with `users.getProfile`, assigns a local opaque
-`account_id`, stores the OAuth credential in the private account namespace, and marks the account as
-active.
+`account_id`, stores the OAuth credential in the private account namespace, and marks the account
+as active.
 
 Use a custom client file or credential directory when required:
 
@@ -93,17 +112,6 @@ gmail-ingest auth \
 
 ```bash
 gmail-ingest profile
-```
-
-The active account is used by default. An explicit account can also be selected:
-
-```bash
-gmail-ingest profile --account-id acct_0123456789abcdef01234567
-```
-
-JSON output is available for automation:
-
-```bash
 gmail-ingest profile --json
 ```
 
@@ -113,11 +121,37 @@ The normalized profile contains `account_id`, `email_address`, `messages_total`,
 Expired access tokens are refreshed transparently when a refresh token is available. A revoked or
 unusable grant fails explicitly and requires `gmail-ingest auth` again.
 
+## Ingest Gmail labels
+
+After OAuth is established:
+
+```bash
+gmail-ingest labels
+```
+
+The default labels flow retrieves the label catalogue, enriches each label with
+`users.labels.get`, persists source JSON as immutable RAW artifacts through PyIngestKit, normalizes
+the target schema, and writes Parquet plus a JSON schema artifact under one run ID.
+
+Use list-only mode when detailed counters and colors are not needed:
+
+```bash
+gmail-ingest labels --no-details
+```
+
+Choose another artifact root when required:
+
+```bash
+gmail-ingest labels --artifact-root /secure/data/gmail-ingestion
+```
+
+The default root is `.gmail-ingestion/`, which is ignored by Git.
+
 ## Credential security
 
 The local store is namespaced by opaque `account_id`. On POSIX-compatible systems, credential
-directories are restricted to `0700` and files to `0600`. OAuth tokens are never included in the
-`GmailAccount` domain object or normal CLI output.
+directories are restricted to `0700` and files to `0600`. OAuth tokens are never included in
+normal domain objects, datasets, RAW Gmail payloads, or CLI output.
 
 The repository ignores `.env`, `credentials.json`, `client_secret*.json`, `token*.json`,
 `tokens/`, and `secrets/`.
@@ -129,6 +163,7 @@ gmail-ingest --help
 gmail-ingest version
 gmail-ingest auth --help
 gmail-ingest profile --help
+gmail-ingest labels --help
 python -m gmail_ingestion --help
 ```
 
@@ -145,9 +180,9 @@ GitHub Actions executes the quality gate on Python 3.11, 3.12 and 3.13 without r
 ## Roadmap
 
 ```text
-0.0.1      Repository Bootstrap                       ✅
-0.1.0a1    OAuth + Profile                            ← current
-0.1.0a2    Labels
+0.0.1      Repository Bootstrap                       ✅ tagged
+0.1.0a1    OAuth + Profile                            ✅ implemented / E2E pending
+0.1.0a2    Labels                                     ← current / E2E pending
 0.1.0b1    Full Message Snapshot
 0.1.0b2    MIME + Attachments + Manifest
 0.2.0      Normalized Dataset
@@ -161,7 +196,8 @@ GitHub Actions executes the quality gate on Python 3.11, 3.12 and 3.13 without r
 1.0.0      Production Qualified
 ```
 
-See [`docs/specs/`](docs/specs/) for the design corpus.
+See [`docs/specs/`](docs/specs/) for the design corpus and [`docs/runbooks/`](docs/runbooks/)
+for executable qualification procedures.
 
 ## License
 
