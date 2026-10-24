@@ -47,4 +47,5 @@ jobs:
           gmail-ingest version
           gmail-ingest auth --help
           gmail-ingest profile --help
+          gmail-ingest labels --help
           python -m gmail_ingestion --help

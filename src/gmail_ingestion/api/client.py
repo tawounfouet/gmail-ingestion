@@ -6,9 +6,8 @@ import importlib
 from collections.abc import Mapping
 from typing import Any, cast
 
-
-class GmailApiError(RuntimeError):
-    """Safe connector-level Gmail API error."""
+from .client_error import GmailApiError
+from .labels import GmailLabelsApi
 
 
 class GmailApiClient:
@@ -17,17 +16,18 @@ class GmailApiClient:
     def __init__(self, *, credentials: Any | None = None, service: Any | None = None) -> None:
         if service is not None:
             self._service = service
-            return
-        if credentials is None:
-            raise ValueError("credentials or service is required")
-        discovery = importlib.import_module("googleapiclient.discovery")
-        build = cast(Any, discovery.build)
-        self._service = build(
-            "gmail",
-            "v1",
-            credentials=credentials,
-            cache_discovery=False,
-        )
+        else:
+            if credentials is None:
+                raise ValueError("credentials or service is required")
+            discovery = importlib.import_module("googleapiclient.discovery")
+            build = cast(Any, discovery.build)
+            self._service = build(
+                "gmail",
+                "v1",
+                credentials=credentials,
+                cache_discovery=False,
+            )
+        self.labels = GmailLabelsApi(self._service)
 
     def get_profile(self) -> Mapping[str, Any]:
         """Call users.getProfile for the authenticated mailbox."""
