@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
