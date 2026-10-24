@@ -1,3 +1,4 @@
+from typer.main import get_command
 from typer.testing import CliRunner
 
 import gmail_ingestion
@@ -31,9 +32,13 @@ def test_labels_help_renders() -> None:
     assert result.exception is None
 
 
-def test_snapshot_help_renders() -> None:
+def test_snapshot_help_and_attachment_options_are_registered() -> None:
     result = runner.invoke(app, ["snapshot", "--help"])
     assert result.exit_code == 0
     assert result.exception is None
-    assert "--download-attachments" in result.stdout
-    assert "--max-attachment-bytes" in result.stdout
+
+    command = get_command(app)
+    snapshot = command.commands["snapshot"]
+    parameter_names = {parameter.name for parameter in snapshot.params}
+    assert "download_attachments" in parameter_names
+    assert "max_attachment_bytes" in parameter_names
