@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+
+import pytest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -227,3 +229,46 @@ def test_attachment_failure_is_partial_not_fatal(tmp_path: Path) -> None:
     manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
     assert manifest["status"] == "PARTIAL"
     assert manifest["errors"][0]["scope"] == "attachment"
+
+
+def test_attachment_size_limit_skips_binary_without_api_call(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    backend = _Backend()
+    result = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+    ).run(download_attachments=True, max_attachment_bytes=2)
+
+    assert result.manifest_status == "COMPLETED"
+    assert result.attachments_detected == 1
+    assert result.attachments_fetched == 0
+    assert result.attachments_skipped == 1
+    assert result.bytes_downloaded == 0
+    assert backend.attachment_calls == 0
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["warnings"][0]["code"] == "ATTACHMENT_SIZE_LIMIT"
+
+
+def test_resume_rejects_changed_attachment_settings(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000403")
+    first_backend = _Backend()
+
+    FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(first_backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, download_attachments=False)
+
+    with pytest.raises(ValueError, match="download_attachments"):
+        FullMessageSnapshot(
+            provider,
+            store,
+            client_factory=_factory(_Backend()),
+            retry_sleep=lambda _: None,
+        ).run(run_id=run_id, download_attachments=True)
