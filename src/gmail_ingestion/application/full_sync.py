@@ -71,7 +71,7 @@ class FullMessageSnapshot:
 
     def __init__(
         self,
-        provider: OAuthProviderProtocol,
+        provider: GmailOAuthProvider,
         artifact_store: ArtifactStore,
         *,
         client_factory: ClientFactory = GmailApiClient,
@@ -101,7 +101,7 @@ class FullMessageSnapshot:
             raise ValueError("max_attempts must be >= 1")
 
         resolved, credentials = self.provider.load(account_id)
-        source_client = self.client_factory(credentials=credentials)
+        source_client = cast(GmailClientProtocol, self.client_factory(credentials=credentials))
         profile = map_gmail_profile(resolved, source_client.get_profile())
         self.provider.store.verify_account_email(resolved, profile.email_address)
 
