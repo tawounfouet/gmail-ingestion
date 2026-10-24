@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from threading import Lock
@@ -122,6 +123,38 @@ def test_snapshot_handles_zero_messages(tmp_path: Path) -> None:
     assert result.pages_scanned == 1
 
 
+
+def test_snapshot_hydrates_one_message_to_immutable_raw(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000302")
+    backend = _Backend(
+        {
+            None: {
+                "messages": [{"id": "m1", "threadId": "t1"}],
+                "resultSizeEstimate": 1,
+            }
+        }
+    )
+
+    result = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id)
+
+    assert result.discovered_count == 1
+    assert result.fetched_count == 1
+    assert result.failed_count == 0
+    raw_path = (
+        store.run_root("gmail.messages", run_id)
+        / "raw"
+        / "message-m1-full.json"
+    )
+    assert raw_path.is_file()
+    assert json.loads(raw_path.read_text(encoding="utf-8"))["id"] == "m1"
+
 def test_snapshot_paginates_deduplicates_and_retries(tmp_path: Path) -> None:
     provider = _Provider(tmp_path / "credentials")
     backend = _Backend(
@@ -196,3 +229,5 @@ def test_snapshot_partial_failure_then_resume_without_duplicates(tmp_path: Path)
     assert resumed.failed_count == 0
     assert second_backend.list_calls == 0
     assert second_backend.fetch_calls == {"m2": 1}
+    raw_dir = store.run_root("gmail.messages", run_id) / "raw"
+    assert len(list(raw_dir.glob("message-*-full.json"))) == 2
