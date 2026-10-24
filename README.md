@@ -2,7 +2,7 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Current development milestone:** `GMAIL_03 — 0.1.0b1 Full Message Snapshot`
+> **Current development milestone:** `GMAIL_04 — 0.1.0b2 MIME + Attachments + Manifest`
 
 The project turns a Gmail mailbox into a controlled dataset pipeline rather than a one-off email export.
 
@@ -12,6 +12,8 @@ Gmail API
 Discovery / Extraction
    ↓
 RAW Preservation
+   ↓
+MIME / Attachment Analysis
    ↓
 Normalization
    ↓
@@ -26,7 +28,7 @@ Reconciliation
 
 ## Current capability
 
-The codebase currently contains three Gmail vertical slices.
+The codebase currently contains four Gmail vertical slices.
 
 ### 0.1.0a1 — OAuth + Profile
 
@@ -55,18 +57,14 @@ users.labels.get enrichment
    ↓
 immutable RAW JSON through PyIngestKit
    ↓
-14-column normalized labels Dataset
+normalized labels Dataset
    ↓
 candidate/labels.parquet
-   +
-candidate/labels.schema.json
 ```
 
 ### 0.1.0b1 — Full Message Snapshot
 
 ```text
-stored Gmail credentials
-   ↓
 users.getProfile
    ↓
 capture H_START
@@ -79,22 +77,42 @@ bounded concurrent hydration
    ↓
 users.messages.get(format="full")
    ↓
-PyIngestKit RetryPolicy
-   ↓
 immutable RAW message JSON
    ↓
 resumable snapshot by run_id
 ```
 
-The snapshot control state is persisted before hydration and updated as messages are fetched. A
-restart with the same `run_id` skips confirmed messages, recovers already-written immutable RAW,
-and retries only unresolved records.
+### 0.1.0b2 — MIME + Attachments + Manifest
 
-MIME parsing, attachment extraction and the auditable snapshot manifest belong to the next
-milestone, `0.1.0b2`.
+```text
+RAW full message
+   ↓
+recursive MIME traversal
+   ├── headers + duplicate preservation
+   ├── parsed mailbox addresses
+   ├── text/plain
+   ├── text/html
+   ├── nested multipart
+   ├── charset handling
+   └── attachment / inline resource detection
+           ↓
+metadata-only (default)
+           or
+optional binary download
+           ↓
+SHA-256 + separate immutable binary storage
+           ↓
+candidate/mime/<message_id>.json
+           ↓
+manifest.json
+```
 
-> **Release status:** `0.1.0a1`, `0.1.0a2` and `0.1.0b1` are implemented and CI-qualified.
-> They remain untagged until their dedicated real-mailbox Gmail API acceptance checks are executed.
+The binary attachment path is deliberately separate from analytical artifacts. Attachment download
+is **disabled by default**; metadata-only mode is the safe baseline.
+
+> **Release status:** `0.1.0a1`, `0.1.0a2`, `0.1.0b1` and `0.1.0b2` are implemented and
+> CI-qualified once the current milestone pipeline is green. They remain untagged until the
+> dedicated real-mailbox acceptance checks are executed.
 
 ## Requirements
 
@@ -116,40 +134,16 @@ python -m pip install -e ".[dev]"
 
 ## First Gmail authorization
 
-Place the Google OAuth Desktop client JSON in the repository working directory as `credentials.json`.
-The file is ignored by Git.
-
 ```bash
 gmail-ingest auth
+gmail-ingest profile
 ```
 
-The command requests exactly:
+The connector requests only:
 
 ```text
 https://www.googleapis.com/auth/gmail.readonly
 ```
-
-After consent, the connector verifies the mailbox with `users.getProfile`, assigns a local opaque
-`account_id`, stores the OAuth credential in the private account namespace, and marks the account
-as active.
-
-Use a custom client file or credential directory when required:
-
-```bash
-gmail-ingest auth \
-  --client-secrets /secure/path/credentials.json \
-  --credential-dir ~/.local/share/gmail-ingestion/credentials
-```
-
-## Retrieve the Gmail profile
-
-```bash
-gmail-ingest profile
-gmail-ingest profile --json
-```
-
-The normalized profile contains `account_id`, `email_address`, `messages_total`,
-`threads_total`, and `history_id`.
 
 ## Ingest Gmail labels
 
@@ -157,66 +151,117 @@ The normalized profile contains `account_id`, `email_address`, `messages_total`,
 gmail-ingest labels
 ```
 
-The default labels flow retrieves the label catalogue, enriches each label with
-`users.labels.get`, persists source JSON as immutable RAW artifacts through PyIngestKit, normalizes
-the target schema, and writes Parquet plus a JSON schema artifact under one run ID.
+## Create a full snapshot
 
-List-only mode:
-
-```bash
-gmail-ingest labels --no-details
-```
-
-## Create a full message snapshot
-
-Start a new full snapshot:
+The default run does **not** download attachment binaries:
 
 ```bash
 gmail-ingest snapshot
 ```
 
-Defaults follow the project requirements:
+Default controls:
 
 ```text
-include_spam_trash = false
-max_results        = 500
-max_workers        = 4
-max_attempts       = 5
+include_spam_trash    = false
+max_results           = 500
+max_workers           = 4
+max_attempts          = 5
+download_attachments  = false
+max_attachment_bytes  = unlimited
 ```
 
-The command persists discovered message IDs before hydration, traverses all discovery pages, fetches
-messages with `format=full`, retries safe acquisition failures through PyIngestKit, and stores every
-successful source response as immutable RAW JSON.
+The snapshot now produces:
 
-Resume an interrupted or partially failed snapshot with the emitted run UUID:
+```text
+runs/gmail/messages/<run_id>/
+├── raw/
+│   └── message-*-full.json
+├── control/
+│   └── message_discovery.json
+├── candidate/
+│   └── mime/
+│       └── <message_id>.json
+└── manifest.json
+```
+
+When binary download is enabled, binaries are isolated under:
+
+```text
+runs/gmail/attachments/<run_id>/raw/
+└── attachment-*
+```
+
+### Download attachment binaries
+
+```bash
+gmail-ingest snapshot --download-attachments
+```
+
+Apply a binary size ceiling:
+
+```bash
+gmail-ingest snapshot \
+  --download-attachments \
+  --max-attachment-bytes 10485760
+```
+
+Oversized binaries are skipped and recorded as warnings in the manifest.
+
+### Resume
 
 ```bash
 gmail-ingest snapshot --run-id <RUN_UUID>
 ```
 
-Include Spam and Trash explicitly when required:
+A resumed run:
 
-```bash
-gmail-ingest snapshot --include-spam-trash
+- does not rediscover messages when discovery was completed;
+- does not refetch messages whose immutable RAW already exists;
+- does not redownload attachment binaries already stored;
+- preserves the original `started_at`;
+- refuses to change attachment/spam settings for the same `run_id`.
+
+## Manifest
+
+Each snapshot run writes a JSON manifest containing, among other fields:
+
+```text
+schema_version
+connector_name
+connector_version
+run_id
+account_id
+started_at
+completed_at
+status
+mode
+message_format
+include_spam_trash
+download_attachments
+history_start
+messages_discovered
+messages_fetched
+messages_failed
+mime_parts
+attachments_detected
+attachments_fetched
+attachments_failed
+attachments_skipped
+bytes_downloaded
+errors
+warnings
+storage_paths
 ```
 
-Choose another artifact root:
+A per-attachment failure does not destroy the entire snapshot. The run is marked `PARTIAL` and the
+failure remains structured in `manifest.json`.
 
-```bash
-gmail-ingest snapshot --artifact-root /secure/data/gmail-ingestion
-```
-
-See [`docs/runbooks/FULL_MESSAGE_SNAPSHOT.md`](docs/runbooks/FULL_MESSAGE_SNAPSHOT.md) for the
-real-mailbox acceptance procedure.
+See [`docs/runbooks/MIME_ATTACHMENTS_MANIFEST.md`](docs/runbooks/MIME_ATTACHMENTS_MANIFEST.md).
 
 ## Credential security
 
-The local store is namespaced by opaque `account_id`. On POSIX-compatible systems, credential
-directories are restricted to `0700` and files to `0600`. OAuth tokens are never included in
-normal domain objects, datasets, RAW Gmail payloads, control artifacts, or CLI output.
-
-The repository ignores `.env`, `credentials.json`, `client_secret*.json`, `token*.json`,
-`tokens/`, and `secrets/`.
+The local credential store is namespaced by opaque `account_id`. OAuth tokens are never included
+in RAW messages, MIME artifacts, attachment artifacts, manifests or CLI output.
 
 ## CLI
 
@@ -238,7 +283,7 @@ mypy src
 pytest
 ```
 
-GitHub Actions executes the quality gate on Python 3.11, 3.12 and 3.13 without real Gmail secrets.
+GitHub Actions executes the gate on Python 3.11, 3.12 and 3.13 without real Gmail secrets.
 
 ## Roadmap
 
@@ -246,8 +291,10 @@ GitHub Actions executes the quality gate on Python 3.11, 3.12 and 3.13 without r
 0.0.1      Repository Bootstrap                       ✅ tagged
 0.1.0a1    OAuth + Profile                            ✅ implemented / E2E pending
 0.1.0a2    Labels                                     ✅ implemented / E2E pending
-0.1.0b1    Full Message Snapshot                      ← current / E2E pending
-0.1.0b2    MIME + Attachments + Manifest              next
+0.1.0b1    Full Message Snapshot                      ✅ implemented / E2E pending
+0.1.0b2    MIME + Attachments + Manifest              ← current / E2E pending
+0.1.0rc1   Snapshot Qualification                     next
+0.1.0      Snapshot Foundation Stable
 0.2.0      Normalized Dataset
 0.3.0      Search / Date Range / Filtered Ingestion
 0.4.0      Incremental History Sync
