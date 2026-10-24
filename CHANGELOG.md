@@ -26,9 +26,9 @@ The project follows Semantic Versioning with pre-release milestones during the p
 
 ### Qualification status
 
-Automated CI qualification is required on Python 3.11, 3.12 and 3.13.
+Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict reports no issues across 46 source files.
 
-The real Gmail mailbox E2E remains a release gate before `0.1.0` stable.
+The real Gmail mailbox E2E remains the release gate before `0.1.0` stable.
 
 ## 0.1.0b2 — MIME + Attachments + Manifest
 
