@@ -7,7 +7,7 @@ runner = CliRunner()
 
 
 def test_package_version() -> None:
-    assert gmail_ingestion.__version__ == "0.1.0a2"
+    assert gmail_ingestion.__version__ == "0.1.0b1"
 
 
 def test_cli_help_exposes_gmail_commands() -> None:
@@ -16,15 +16,22 @@ def test_cli_help_exposes_gmail_commands() -> None:
     assert "auth" in result.stdout
     assert "profile" in result.stdout
     assert "labels" in result.stdout
+    assert "snapshot" in result.stdout
 
 
 def test_cli_version() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.1.0a2"
+    assert result.stdout.strip() == "0.1.0b1"
 
 
 def test_labels_help_renders() -> None:
     result = runner.invoke(app, ["labels", "--help"])
+    assert result.exit_code == 0
+    assert result.exception is None
+
+
+def test_snapshot_help_renders() -> None:
+    result = runner.invoke(app, ["snapshot", "--help"])
     assert result.exit_code == 0
     assert result.exception is None

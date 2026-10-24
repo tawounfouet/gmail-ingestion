@@ -48,4 +48,5 @@ jobs:
           gmail-ingest auth --help
           gmail-ingest profile --help
           gmail-ingest labels --help
+          gmail-ingest snapshot --help
           python -m gmail_ingestion --help

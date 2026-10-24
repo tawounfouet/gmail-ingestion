@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from .client_error import GmailApiError
 from .labels import GmailLabelsApi
+from .messages import GmailMessagesApi
 
 
 class GmailApiClient:
@@ -28,6 +29,7 @@ class GmailApiClient:
                 cache_discovery=False,
             )
         self.labels = GmailLabelsApi(self._service)
+        self.messages = GmailMessagesApi(self._service)
 
     def get_profile(self) -> Mapping[str, Any]:
         """Call users.getProfile for the authenticated mailbox."""
