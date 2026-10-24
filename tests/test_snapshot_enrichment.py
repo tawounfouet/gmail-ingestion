@@ -3,13 +3,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-
-import pytest
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api import GmailApiError
