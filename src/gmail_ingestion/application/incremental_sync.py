@@ -271,7 +271,7 @@ class IncrementalHistorySync:
                         )
                         raise FullResyncRequiredError(
                             "Committed Gmail history checkpoint is invalid or expired; "
-                            "a full snapshot is required"
+                            "a full sync snapshot is required"
                         ) from exc
 
                     history_writer.write_page(
