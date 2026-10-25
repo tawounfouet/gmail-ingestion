@@ -1,5 +1,6 @@
 """CLI command for a resumable full Gmail message snapshot."""
 
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -56,6 +57,18 @@ def snapshot_command(
             help="Gmail label ID required during discovery. Repeat for multiple labels.",
         ),
     ] = None,
+    after: Annotated[
+        str | None,
+        typer.Option("--after", help="Gmail lower date bound as YYYY-MM-DD."),
+    ] = None,
+    before: Annotated[
+        str | None,
+        typer.Option("--before", help="Gmail upper date bound as YYYY-MM-DD."),
+    ] = None,
+    last_days: Annotated[
+        int | None,
+        typer.Option("--last-days", min=1, help="Freeze a relative lower bound at run start."),
+    ] = None,
     max_results: Annotated[
         int,
         typer.Option("--max-results", min=1, max=500, help="Messages per discovery page."),
@@ -87,6 +100,8 @@ def snapshot_command(
     """Create/resume a full or explicitly filtered Gmail snapshot."""
     try:
         parsed_run_id = UUID(run_id) if run_id is not None else None
+        parsed_after = _parse_iso_date(after, option="--after")
+        parsed_before = _parse_iso_date(before, option="--before")
         provider = build_provider(Path("credentials.json"), credential_dir)
         result = FullMessageSnapshot(
             provider,
@@ -97,6 +112,9 @@ def snapshot_command(
             include_spam_trash=include_spam_trash,
             query=query,
             label_ids=tuple(label_ids or ()),
+            after=parsed_after,
+            before=parsed_before,
+            last_days=last_days,
             max_results=max_results,
             max_workers=max_workers,
             max_attempts=max_attempts,
@@ -137,3 +155,12 @@ def snapshot_command(
 
     if result.manifest_status != "COMPLETED":
         raise typer.Exit(code=2)
+
+
+def _parse_iso_date(value: str | None, *, option: str) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{option} must use YYYY-MM-DD format") from exc
