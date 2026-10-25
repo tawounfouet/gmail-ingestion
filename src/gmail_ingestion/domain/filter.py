@@ -24,7 +24,7 @@ class GmailFilter:
         query: str | None = None,
         label_ids: Sequence[str] = (),
         include_spam_trash: bool = False,
-    ) -> "GmailFilter":
+    ) -> GmailFilter:
         """Build a filter from public API/CLI values without mutating caller-owned inputs."""
         return cls(
             query=query,
