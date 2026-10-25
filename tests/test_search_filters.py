@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -10,9 +11,9 @@ import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api.messages import GmailMessagesApi
-from gmail_ingestion.application import FilteredMessageSnapshot, FullMessageSnapshot
+from gmail_ingestion.application import FilteredMessageSnapshot, FullMessageSnapshot, RangeMessageSnapshot
 from gmail_ingestion.auth.store import LocalCredentialStore
-from gmail_ingestion.domain import GmailAccount, GmailFilter
+from gmail_ingestion.domain import DateRange, GmailAccount, GmailFilter
 
 
 class _Request:
@@ -234,11 +235,17 @@ def test_filtered_snapshot_preserves_scope_across_pagination_and_manifest(
         "query": "has:attachment",
         "label_ids": ["IMPORTANT", "INBOX"],
         "include_spam_trash": True,
+        "after": None,
+        "before": None,
+        "last_days": None,
     }
     assert manifest["effective_filter"] == {
         "gmail_q": "has:attachment",
         "label_ids": ["IMPORTANT", "INBOX"],
         "include_spam_trash": True,
+        "resolved_after": None,
+        "resolved_before": None,
+        "resolution_timestamp": None,
     }
 
 
@@ -276,3 +283,139 @@ def test_filtered_use_case_rejects_unfiltered_scope(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="requires query and/or label_ids"):
         filtered.run(GmailFilter())
+
+
+
+def test_date_range_compiles_exact_gmail_query() -> None:
+    gmail_filter = GmailFilter.from_values(
+        query="has:attachment",
+        label_ids=("IMPORTANT",),
+        after=date(2026, 10, 1),
+        before=date(2026, 10, 24),
+    )
+
+    assert gmail_filter.scope_kind == "range"
+    assert (
+        gmail_filter.effective_query
+        == "has:attachment after:2026/10/01 before:2026/10/24"
+    )
+    assert gmail_filter.requested_payload()["after"] == "2026-10-01"
+    assert gmail_filter.requested_payload()["before"] == "2026-10-24"
+    assert gmail_filter.effective_payload()["resolved_after"] == "2026-10-01"
+    assert gmail_filter.effective_payload()["resolved_before"] == "2026-10-24"
+
+
+def test_last_days_is_frozen_against_resolution_timestamp() -> None:
+    resolved_at = datetime(2026, 10, 25, 9, 30, tzinfo=UTC)
+    gmail_filter = GmailFilter.from_values(
+        last_days=7,
+        resolution_timestamp=resolved_at,
+    )
+
+    assert gmail_filter.effective_query == "after:2026/10/18"
+    assert gmail_filter.requested_payload()["last_days"] == 7
+    assert gmail_filter.effective_payload()["resolved_after"] == "2026-10-18"
+    assert (
+        gmail_filter.effective_payload()["resolution_timestamp"]
+        == "2026-10-25T09:30:00+00:00"
+    )
+
+
+@pytest.mark.parametrize(
+    "date_range",
+    [
+        lambda: DateRange(after=date(2026, 10, 24), before=date(2026, 10, 1)),
+        lambda: DateRange(last_days=0),
+        lambda: DateRange(after=date(2026, 10, 1), last_days=7),
+    ],
+)
+def test_date_range_rejects_invalid_inputs(date_range: Any) -> None:
+    with pytest.raises(ValueError):
+        date_range()
+
+
+def test_range_snapshot_combines_query_labels_dates_and_manifest(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    backend = _Backend()
+    run_id = UUID("00000000-0000-0000-0000-000000000309")
+
+    result = RangeMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+    ).run(
+        DateRange(after=date(2026, 10, 1), before=date(2026, 10, 24)),
+        run_id=run_id,
+        query="has:attachment",
+        label_ids=("IMPORTANT",),
+    )
+
+    expected_q = "has:attachment after:2026/10/01 before:2026/10/24"
+    assert len(backend.calls) == 2
+    assert all(call["query"] == expected_q for call in backend.calls)
+    assert all(call["label_ids"] == ("IMPORTANT",) for call in backend.calls)
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["mode"] == "range_snapshot"
+    assert manifest["scope"]["kind"] == "range"
+    assert manifest["requested_filter"]["after"] == "2026-10-01"
+    assert manifest["requested_filter"]["before"] == "2026-10-24"
+    assert manifest["effective_filter"]["gmail_q"] == expected_q
+    assert manifest["effective_filter"]["resolved_after"] == "2026-10-01"
+    assert manifest["effective_filter"]["resolved_before"] == "2026-10-24"
+
+
+def test_last_days_resume_reuses_original_frozen_scope(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000310")
+
+    first = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(_Backend()),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, last_days=7)
+    first_manifest = json.loads(Path(first.manifest_path).read_text(encoding="utf-8"))
+
+    second = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(_Backend()),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, last_days=7)
+    second_manifest = json.loads(Path(second.manifest_path).read_text(encoding="utf-8"))
+
+    assert second.resumed is True
+    assert (
+        second_manifest["effective_filter"]["resolved_after"]
+        == first_manifest["effective_filter"]["resolved_after"]
+    )
+    assert (
+        second_manifest["effective_filter"]["resolution_timestamp"]
+        == first_manifest["effective_filter"]["resolution_timestamp"]
+    )
+    assert second_manifest["scope"]["fingerprint"] == first_manifest["scope"]["fingerprint"]
+
+
+def test_resume_rejects_changed_relative_range(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000311")
+
+    FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(_Backend()),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, last_days=7)
+
+    with pytest.raises(ValueError, match="last_days|scope"):
+        FullMessageSnapshot(
+            provider,
+            store,
+            client_factory=_factory(_Backend()),
+            retry_sleep=lambda _: None,
+        ).run(run_id=run_id, last_days=30)
