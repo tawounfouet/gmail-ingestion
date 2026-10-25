@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
+import gmail_ingestion
+
 from gmail_ingestion.application import FullMessageSnapshot, GetMailboxProfile, IngestLabels
 from gmail_ingestion.auth.provider import GmailOAuthProvider
 from gmail_ingestion.auth.store import LocalCredentialStore
@@ -483,7 +485,7 @@ def test_rc1_foundation_flow_covers_refresh_labels_mime_threads_and_attachment(
 
     manifest = json.loads(Path(snapshot.manifest_path).read_text(encoding="utf-8"))
     assert manifest["status"] == "COMPLETED"
-    assert manifest["connector_version"] == "0.1.0"
+    assert manifest["connector_version"] == gmail_ingestion.__version__
     assert manifest["messages_discovered"] == 5
     assert manifest["messages_fetched"] == 5
     assert manifest["attachments_fetched"] == 1
