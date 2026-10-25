@@ -21,7 +21,10 @@ _SECRET_KEYS = ("token", "refresh_token", "client_secret")
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Qualify Gmail Ingestion 0.1.0 against a dedicated real Gmail test mailbox."
+        description=(
+            "Qualify Gmail Ingestion 0.1.0 against a real Gmail mailbox. "
+            "A bounded sample is used by default so large mailboxes remain safe."
+        )
     )
     parser.add_argument("--account-id")
     parser.add_argument("--credential-dir", type=Path, default=default_credential_dir())
@@ -33,6 +36,17 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-workers", type=int, default=4)
     parser.add_argument("--max-attempts", type=int, default=5)
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=50,
+        help="Maximum real Gmail messages to qualify. Defaults to 50.",
+    )
+    parser.add_argument(
+        "--full-mailbox",
+        action="store_true",
+        help="Qualify the entire mailbox instead of the bounded sample.",
+    )
     parser.add_argument("--download-attachments", action="store_true")
     parser.add_argument("--max-attachment-bytes", type=int)
     parser.add_argument("--require-attachment", action="store_true")
@@ -70,6 +84,10 @@ def main() -> int:
             f"Stable qualification requires gmail-ingestion 0.1.0, found {__version__}"
         )
 
+    if args.sample_size < 1:
+        raise SystemExit("--sample-size must be >= 1")
+
+    message_limit = None if args.full_mailbox else args.sample_size
     provider = build_provider(Path("credentials.json"), args.credential_dir)
     account_id, credential_payload = provider.store.load_credentials_info(args.account_id)
     secrets = _credential_secrets(credential_payload)
@@ -85,6 +103,7 @@ def main() -> int:
         max_attempts=args.max_attempts,
         download_attachments=args.download_attachments,
         max_attachment_bytes=args.max_attachment_bytes,
+        message_limit=message_limit,
     )
     resumed = FullMessageSnapshot(provider, store).run(
         account_id,
@@ -93,6 +112,7 @@ def main() -> int:
         max_attempts=args.max_attempts,
         download_attachments=args.download_attachments,
         max_attachment_bytes=args.max_attachment_bytes,
+        message_limit=message_limit,
     )
 
     checks = {
@@ -103,6 +123,9 @@ def main() -> int:
         "labels_raw_present": labels.raw_artifact_count > 0,
         "labels_parquet_present": labels.parquet_path.is_file(),
         "snapshot_completed": snapshot.manifest_status == "COMPLETED",
+        "sample_bound_respected": (
+            message_limit is None or snapshot.discovered_count <= message_limit
+        ),
         "snapshot_all_messages_fetched": (
             snapshot.discovered_count == snapshot.fetched_count
             and snapshot.failed_count == 0
@@ -144,6 +167,8 @@ def main() -> int:
             "download_attachments": args.download_attachments,
             "max_attachment_bytes": args.max_attachment_bytes,
             "require_attachment": args.require_attachment,
+            "sample_size": message_limit,
+            "full_mailbox": args.full_mailbox,
         },
         "profile": {
             "messages_total": second_profile.messages_total,

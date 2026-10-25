@@ -160,6 +160,7 @@ Use a dedicated Gmail test mailbox:
 ```bash
 gmail-ingest auth
 python scripts/qualify_live_snapshot_foundation.py \
+  --sample-size 50 \
   --download-attachments \
   --require-attachment \
   --max-attachment-bytes 10485760
@@ -170,6 +171,9 @@ Required output:
 ```text
 live_gate: PASS
 ```
+
+The qualification script uses a bounded 50-message real Gmail sample by default, so very large
+mailboxes do not need to be fully downloaded. Use `--full-mailbox` only when explicitly desired.
 
 The script emits redacted evidence at:
 

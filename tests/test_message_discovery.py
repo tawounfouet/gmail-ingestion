@@ -36,6 +36,7 @@ def test_discovery_queue_deduplicates_and_reloads(tmp_path: Path) -> None:
         discovered_at=timestamp,
     ) == 1
 
+    queue.checkpoint_discovery_page("page-3")
     queue.mark_fetched("m1", attempts=1)
     queue.mark_failed(
         "m2",
@@ -43,7 +44,6 @@ def test_discovery_queue_deduplicates_and_reloads(tmp_path: Path) -> None:
         error_code="GMAIL_API_ERROR",
         error_message="temporary failure",
     )
-    queue.mark_discovery_complete()
     queue.persist()
 
     reloaded = MessageDiscoveryQueue.load_or_create(
@@ -54,7 +54,8 @@ def test_discovery_queue_deduplicates_and_reloads(tmp_path: Path) -> None:
     )
     assert reloaded.loaded_existing is True
     assert reloaded.history_start == "100"
-    assert reloaded.discovery_complete is True
+    assert reloaded.discovery_complete is False
+    assert reloaded.next_page_token == "page-3"
     assert reloaded.pages_scanned == 2
     assert len(reloaded.records) == 3
     assert reloaded.records["m1"].fetch_status is MessageFetchStatus.FETCHED

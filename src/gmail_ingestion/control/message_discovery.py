@@ -36,6 +36,7 @@ class MessageDiscoveryQueue:
         discovery_complete: bool = False,
         pages_scanned: int = 0,
         loaded_existing: bool = False,
+        next_page_token: str | None = None,
     ) -> None:
         self.store = store
         self.run_id = run_id
@@ -45,6 +46,7 @@ class MessageDiscoveryQueue:
         self.discovery_complete = discovery_complete
         self.pages_scanned = pages_scanned
         self.loaded_existing = loaded_existing
+        self.next_page_token = next_page_token
 
     @classmethod
     def load_or_create(
@@ -96,6 +98,7 @@ class MessageDiscoveryQueue:
             discovery_complete=bool(payload.get("discovery_complete", False)),
             pages_scanned=_non_negative_int(payload.get("pages_scanned", 0), "pages_scanned"),
             loaded_existing=True,
+            next_page_token=_optional_str(payload.get("next_page_token")),
         )
 
     def merge_page(
@@ -125,16 +128,26 @@ class MessageDiscoveryQueue:
         self.pages_scanned = max(self.pages_scanned, page_index + 1)
         return added
 
+    def checkpoint_discovery_page(self, next_page_token: str | None) -> None:
+        """Persist the exact cursor required to continue after the current page."""
+        self.next_page_token = next_page_token
+        self.discovery_complete = next_page_token is None
+
     def mark_discovery_complete(self) -> None:
+        self.next_page_token = None
         self.discovery_complete = True
 
-    def pending(self) -> tuple[MessageDiscoveryRecord, ...]:
-        """Return records that still need a confirmed immutable RAW message."""
-        return tuple(
+    def iter_pending(self):
+        """Yield records that still need a confirmed immutable RAW message."""
+        return (
             record
             for record in self.records.values()
             if record.fetch_status is not MessageFetchStatus.FETCHED
         )
+
+    def pending(self) -> tuple[MessageDiscoveryRecord, ...]:
+        """Return pending records as a tuple for compatibility."""
+        return tuple(self.iter_pending())
 
     def mark_fetched(self, message_id: str, *, attempts: int) -> None:
         record = self._record(message_id)
@@ -185,12 +198,13 @@ class MessageDiscoveryQueue:
 
     def to_payload(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "run_id": str(self.run_id),
             "account_id": self.account_id,
             "history_start": self.history_start,
             "discovery_complete": self.discovery_complete,
             "pages_scanned": self.pages_scanned,
+            "next_page_token": self.next_page_token,
             "records": [_record_to_payload(record) for record in self.records.values()],
         }
 

@@ -40,12 +40,17 @@ class _Backend:
         self.failures_before_success = failures_before_success or {}
         self.fetch_calls: dict[str, int] = {}
         self.list_calls = 0
+        self.list_tokens: list[str | None] = []
         self.lock = Lock()
 
     def list_page(self, page_token: str | None) -> Mapping[str, Any]:
         with self.lock:
             self.list_calls += 1
-        return self.pages[page_token]
+            self.list_tokens.append(page_token)
+        page = self.pages[page_token]
+        if isinstance(page, Exception):
+            raise page
+        return page
 
     def get_message(self, message_id: str) -> Mapping[str, Any]:
         with self.lock:
@@ -231,3 +236,113 @@ def test_snapshot_partial_failure_then_resume_without_duplicates(tmp_path: Path)
     assert second_backend.fetch_calls == {"m2": 1}
     raw_dir = store.run_root("gmail.messages", run_id) / "raw"
     assert len(list(raw_dir.glob("message-*-full.json"))) == 2
+
+
+def test_snapshot_resumes_discovery_from_persisted_page_token(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000304")
+
+    first_backend = _Backend(
+        {
+            None: {
+                "messages": [{"id": "m1", "threadId": "t1"}],
+                "nextPageToken": "p2",
+            },
+            "p2": GmailApiError("temporary discovery failure"),
+        }
+    )
+
+    try:
+        FullMessageSnapshot(
+            provider,
+            store,
+            client_factory=_factory(first_backend),
+            retry_sleep=lambda _: None,
+        ).run(run_id=run_id)
+    except GmailApiError:
+        pass
+    else:
+        raise AssertionError("expected discovery failure")
+
+    second_backend = _Backend(
+        {
+            "p2": {
+                "messages": [{"id": "m2", "threadId": "t2"}],
+            }
+        }
+    )
+    resumed = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(second_backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id)
+
+    assert resumed.resumed is True
+    assert resumed.discovered_count == 2
+    assert resumed.fetched_count == 2
+    assert second_backend.list_tokens == ["p2"]
+
+
+def test_snapshot_qualification_limit_bounds_real_scope(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000305")
+    backend = _Backend(
+        {
+            None: {
+                "messages": [
+                    {"id": "m1", "threadId": "t1"},
+                    {"id": "m2", "threadId": "t2"},
+                    {"id": "m3", "threadId": "t3"},
+                ],
+                "nextPageToken": "p2",
+            }
+        }
+    )
+
+    result = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, message_limit=2)
+
+    assert result.discovered_count == 2
+    assert result.fetched_count == 2
+    assert set(backend.fetch_calls) == {"m1", "m2"}
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["mode"] == "sample_snapshot"
+    assert manifest["message_limit"] == 2
+
+
+def test_hydration_checkpoints_are_batched(tmp_path: Path, monkeypatch) -> None:
+    from gmail_ingestion.control import MessageDiscoveryQueue
+
+    provider = _Provider(tmp_path / "credentials")
+    messages = [
+        {"id": f"m{index}", "threadId": f"t{index}"}
+        for index in range(10)
+    ]
+    backend = _Backend({None: {"messages": messages}})
+    persist_calls = 0
+    original_persist = MessageDiscoveryQueue.persist
+
+    def counted_persist(self):
+        nonlocal persist_calls
+        persist_calls += 1
+        return original_persist(self)
+
+    monkeypatch.setattr(MessageDiscoveryQueue, "persist", counted_persist)
+
+    result = FullMessageSnapshot(
+        provider,
+        LocalArtifactStore(tmp_path / "artifacts"),
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+        queue_checkpoint_batch_size=3,
+    ).run(max_workers=2)
+
+    assert result.fetched_count == 10
+    assert persist_calls == 5

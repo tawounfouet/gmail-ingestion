@@ -53,6 +53,7 @@ class GmailRunManifest:
     messages_discovered: int
     messages_fetched: int
     messages_failed: int
+    message_limit: int | None = None
     mime_parts: int = 0
     mime_messages_processed: int = 0
     mime_messages_failed: int = 0
@@ -78,8 +79,9 @@ class GmailRunManifest:
                 self.completed_at.isoformat() if self.completed_at is not None else None
             ),
             "status": self.status,
-            "mode": "full_snapshot",
+            "mode": "sample_snapshot" if self.message_limit is not None else "full_snapshot",
             "filters": {"query": None, "label_ids": []},
+            "message_limit": self.message_limit,
             "message_format": "full",
             "include_spam_trash": self.include_spam_trash,
             "download_attachments": self.download_attachments,
@@ -147,6 +149,7 @@ class ManifestWriter:
         include_spam_trash: bool,
         download_attachments: bool,
         max_attachment_bytes: int | None,
+        message_limit: int | None = None,
     ) -> None:
         payload = self.load_payload(run_id)
         if payload is None:
@@ -155,6 +158,7 @@ class ManifestWriter:
             "include_spam_trash": include_spam_trash,
             "download_attachments": download_attachments,
             "max_attachment_bytes": max_attachment_bytes,
+            "message_limit": message_limit,
         }
         for key, value in expected.items():
             if payload.get(key) != value:
