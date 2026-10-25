@@ -2,10 +2,11 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Current release target:** `v0.2.0 — Normalized Dataset Stable`
+> **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
+> **Current development target:** `v0.4.0 — Incremental History Sync`
 
-`0.2.0` preserves the qualified `0.1.0` Gmail snapshot path and adds the first stable
-analytical contract.
+`0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
+label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
 
 ```text
 Gmail API
@@ -21,15 +22,14 @@ Quality checks
 Parquet
 ```
 
-## Release status
+## Stable foundation
 
-The pre-promotion candidate is automatically qualified on:
+The published `0.2.0` release was qualified on:
 
 ```text
 Python 3.11       PASS
 Python 3.12       PASS
 Python 3.13       PASS
-pytest            46/46 PASS
 Ruff              PASS
 mypy strict       PASS
 wheel + sdist     PASS
@@ -38,8 +38,8 @@ clean install     PASS
 PyIngestKit       v2.1.0 verified
 ```
 
-The source-extraction layer remains the same qualified `gmail.readonly` Snapshot Foundation
-released in `0.1.0`. The `0.2.0` transformation path performs no Gmail API call.
+The source-extraction layer remains based on the qualified `gmail.readonly` Snapshot Foundation.
+The `0.3.0` release changes message discovery scope only; RAW hydration and normalization remain unchanged.
 
 ## Stable normalized contract
 
@@ -113,6 +113,56 @@ gmail-ingest snapshot \
   --max-attachment-bytes 10485760
 ```
 
+## Filtered snapshot — 0.3.0
+
+Gmail-native query:
+
+```bash
+gmail-ingest snapshot --query "has:attachment"
+```
+
+Label-filtered discovery:
+
+```bash
+gmail-ingest snapshot --label-id IMPORTANT --label-id INBOX
+```
+
+Combined search, labels and Spam/Trash policy:
+
+```bash
+gmail-ingest snapshot \
+  --query "from:example.com" \
+  --label-id IMPORTANT \
+  --include-spam-trash
+```
+
+The filter is captured in the run manifest with requested/effective values and a deterministic
+scope fingerprint.
+
+Date range:
+
+```bash
+gmail-ingest range \
+  --after 2026-10-01 \
+  --before 2026-10-24
+```
+
+Relative range frozen at run start:
+
+```bash
+gmail-ingest range --last-days 7
+```
+
+Combined source scope:
+
+```bash
+gmail-ingest range \
+  --query "has:attachment" \
+  --label-id IMPORTANT \
+  --after 2026-10-01 \
+  --before 2026-10-24
+```
+
 ## Normalize with the library
 
 ```python
@@ -154,10 +204,13 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.3.0.md`
+- `docs/releases/v0.3.0-qualification.md`
+- `docs/releases/v0.3.0-evidence.md`
+- `docs/releases/COMPATIBILITY-v0.3.0.md`
+- `docs/releases/MIGRATION-v0.3.0.md`
+- `docs/runbooks/FILTERED_INGESTION.md`
 - `docs/releases/v0.2.0.md`
-- `docs/releases/v0.2.0-qualification.md`
-- `docs/releases/COMPATIBILITY-v0.2.0.md`
-- `docs/releases/MIGRATION-v0.2.0.md`
 - `docs/runbooks/NORMALIZED_DATASET.md`
 
 ## Roadmap
@@ -168,8 +221,11 @@ python -m twine check dist/*
 0.2.0a1    Normalized Data Model                ✅
 0.2.0b1    Threads + Relations                  ✅
 0.2.0rc1   Normalization Qualification          ✅
-0.2.0      Normalized Dataset Stable            candidate
-0.3.0      Search / Date Range / Filtered       next
+0.2.0      Normalized Dataset Stable            ✅ released / frozen
+0.3.0a1    Search Filters                        ✅ qualified slice
+0.3.0b1    Date Range / Filtered Sync            ✅ qualified
+0.3.0      Filtered Ingestion Stable             ✅ stable
+0.4.0      Incremental History Sync               next
 ```
 
 ## License

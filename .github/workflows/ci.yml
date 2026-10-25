@@ -46,11 +46,12 @@ jobs:
       - name: CLI smoke test
         run: |
           gmail-ingest --help
-          test "$(gmail-ingest version)" = "0.2.0"
+          test "$(gmail-ingest version)" = "0.3.0"
           gmail-ingest auth --help
           gmail-ingest profile --help
           gmail-ingest labels --help
           gmail-ingest snapshot --help
+          gmail-ingest range --help
           python -m gmail_ingestion --help
 
   package:
@@ -79,24 +80,24 @@ jobs:
       - name: Record SHA-256
         shell: bash
         run: |
-          sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS-v0.2.0
-          cat dist/SHA256SUMS-v0.2.0
+          sha256sum dist/*.whl dist/*.tar.gz > dist/SHA256SUMS-v0.3.0
+          cat dist/SHA256SUMS-v0.3.0
 
       - name: Clean wheel install
         shell: bash
         run: |
           python -m venv /tmp/gmail-ingestion-wheel
           /tmp/gmail-ingestion-wheel/bin/python -m pip install --upgrade pip
-          wheel="$(ls dist/gmail_ingestion-0.2.0-*.whl | head -n 1)"
+          wheel="$(ls dist/gmail_ingestion-0.3.0-*.whl | head -n 1)"
           /tmp/gmail-ingestion-wheel/bin/python -m pip install "$wheel"
-          test "$(/tmp/gmail-ingestion-wheel/bin/gmail-ingest version)" = "0.2.0"
+          test "$(/tmp/gmail-ingestion-wheel/bin/gmail-ingest version)" = "0.3.0"
           /tmp/gmail-ingestion-wheel/bin/python - <<'PY'
           from importlib.metadata import requires, version
 
           import gmail_ingestion
           from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION
 
-          assert gmail_ingestion.__version__ == "0.2.0"
+          assert gmail_ingestion.__version__ == "0.3.0"
           assert NORMALIZED_SCHEMA_VERSION == "1"
           assert version("pyingestkit") == "2.1.0"
           requirements = requires("gmail-ingestion") or []
@@ -109,6 +110,6 @@ jobs:
       - name: Upload release candidate artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gmail-ingestion-v0.2.0-dist
+          name: gmail-ingestion-v0.3.0-dist
           path: dist/
           if-no-files-found: error
