@@ -2,11 +2,11 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
-> **Current development target:** `v0.4.0 — Incremental Sync Stable` (live promotion gate pending)
+> **Stable release:** `v0.4.0 — Incremental Sync Stable`
 
-`0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
-label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
+`0.4.0` adds Gmail History incremental synchronization, committed checkpoints, deletion and label
+mutation handling, durable replay receipts, crash-safe recovery and automatic Full Snapshot bootstrap
+while preserving normalized schema v1 and the read-only Gmail authorization contract.
 
 ```text
 Gmail API
@@ -82,7 +82,7 @@ v2.1.0
 ```bash
 git clone https://github.com/tawounfouet/gmail-ingestion.git
 cd gmail-ingestion
-git checkout v0.3.0
+git checkout v0.4.0
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -93,7 +93,7 @@ gmail-ingest version
 Expected:
 
 ```text
-0.3.0
+0.4.0
 ```
 
 ## Source snapshot
@@ -398,27 +398,25 @@ gmail-ingest incremental --no-auto-full-resync
 The rc1 qualification is automated and synthetic. A real-mailbox Gmail E2E is deliberately kept
 as a promotion gate for stable `0.4.0`.
 
-## Stable 0.4.0 live promotion gate
+## Stable 0.4.0 live qualification
 
-The implementation and automated reliability qualification are complete. Stable promotion now
-requires the real Gmail two-phase gate:
+The real Gmail two-phase promotion gate passed on 2026-10-25 from live-qualified candidate
+`8b9a0693a06a922bda8ec728fecee8b2b90e5c8f`.
 
-```bash
-python scripts/qualify_live_incremental_sync.py prepare --full-mailbox
+Observed real History coverage:
 
-# perform the bounded Gmail UI changes printed by the script
-
-python scripts/qualify_live_incremental_sync.py verify
-
-python scripts/render_live_incremental_evidence.py \
-  --candidate-commit "$(git rev-parse HEAD)"
+```text
+MESSAGE_ADDED      5
+MESSAGE_DELETED    4
+LABEL_ADDED        4
+LABEL_REMOVED      5
 ```
 
-The script uses isolated local artifact/checkpoint roots and never mutates Gmail itself; the
-connector remains `gmail.readonly`. Stable evidence requires all four event types plus same-run
-and cross-run replay checks.
+Same-run recovery, cross-run durable receipt replay, zero replay rehydration, checkpoint
+advancement and OAuth-secret exclusion all passed. The connector remained `gmail.readonly`.
 
-See `docs/runbooks/LIVE_INCREMENTAL_QUALIFICATION.md`.
+See `docs/releases/v0.4.0-evidence.md` and
+`docs/runbooks/LIVE_INCREMENTAL_QUALIFICATION.md`.
 
 ## Normalize with the library
 
@@ -461,6 +459,10 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.4.0.md`
+- `docs/releases/v0.4.0-evidence.md`
+- `docs/releases/COMPATIBILITY-v0.4.0.md`
+- `docs/releases/MIGRATION-v0.4.0.md`
 - `docs/releases/v0.4.0-stable-promotion.md`
 - `docs/runbooks/LIVE_INCREMENTAL_QUALIFICATION.md`
 - `docs/releases/v0.4.0rc1.md`
@@ -499,7 +501,7 @@ python -m twine check dist/*
 0.4.0b1    Gmail History Incremental               ✅ qualified
 0.4.0b2    Deletions + Label Mutations             ✅ qualified
 0.4.0rc1   Incremental Reliability                 ✅ qualified
-0.4.0      Incremental Sync Stable                 ← live gate pending
+0.4.0      Incremental Sync Stable                 ✅ stable / live-qualified
 ```
 
 ## License

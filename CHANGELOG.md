@@ -4,6 +4,57 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0 — 2026-10-25 — Incremental Sync Stable
+
+### Stable capability
+
+- committed per-account Gmail History checkpoints with explicit candidate/commit/invalidate states;
+- incremental `users.history.list` processing for message additions, deletions and label mutations;
+- deterministic event IDs and append-style mutation/tombstone artifacts;
+- durable account-scoped receipts for cross-run idempotence;
+- same-run replay of frozen History pages and persisted effects;
+- compare-and-swap checkpoint promotion/invalidation;
+- automatic `Full Snapshot → bootstrap checkpoint → History catch-up` recovery;
+- resumable full-mailbox qualification snapshots and resumable post-bootstrap catch-up;
+- graceful handling of malformed individual Gmail MIME headers as warnings;
+- graceful handling of History `MESSAGE_ADDED` events whose message is already permanently deleted
+  when hydration occurs.
+
+### Stable contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Real Gmail qualification
+
+The external Gmail OAuth/API-client gate passed on 2026-10-25 from candidate
+`8b9a0693a06a922bda8ec728fecee8b2b90e5c8f`.
+
+```text
+MESSAGE_ADDED      5
+MESSAGE_DELETED    4
+LABEL_ADDED        4
+LABEL_REMOVED      5
+
+checkpoint advancement                       PASS
+all events processed                         PASS
+same-run recovery                            PASS
+cross-run durable receipt replay             PASS
+cross-run message rehydration                0
+OAuth secrets absent from artifacts/control  PASS
+```
+
+The live-qualified code candidate also passed CI #117 with Python 3.11/3.12/3.13, Ruff, mypy
+strict, 105/105 tests, CLI smoke and package validation.
+
+See `docs/releases/v0.4.0-evidence.md`.
+
 ## 0.4.0rc1 — 2026-10-25 — Incremental Reliability
 
 ### Added
