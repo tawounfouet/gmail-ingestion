@@ -442,7 +442,7 @@ class FullMessageSnapshot:
             completed_at=completed_at,
             status=status,
             history_start=queue.history_start,
-            include_spam_trash=include_spam_trash,
+            include_spam_trash=gmail_filter.include_spam_trash,
             download_attachments=download_attachments,
             max_attachment_bytes=max_attachment_bytes,
             messages_discovered=len(queue.records),
