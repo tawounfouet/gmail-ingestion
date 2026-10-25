@@ -42,6 +42,20 @@ def snapshot_command(
             help="Include Gmail Spam and Trash during discovery.",
         ),
     ] = False,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            help="Gmail-native search expression forwarded to users.messages.list.",
+        ),
+    ] = None,
+    label_ids: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--label-id",
+            help="Gmail label ID required during discovery. Repeat for multiple labels.",
+        ),
+    ] = None,
     max_results: Annotated[
         int,
         typer.Option("--max-results", min=1, max=500, help="Messages per discovery page."),
@@ -70,7 +84,7 @@ def snapshot_command(
         ),
     ] = None,
 ) -> None:
-    """Create/resume a full snapshot with MIME analysis, attachments and manifest."""
+    """Create/resume a full or explicitly filtered Gmail snapshot."""
     try:
         parsed_run_id = UUID(run_id) if run_id is not None else None
         provider = build_provider(Path("credentials.json"), credential_dir)
@@ -81,6 +95,8 @@ def snapshot_command(
             account_id,
             run_id=parsed_run_id,
             include_spam_trash=include_spam_trash,
+            query=query,
+            label_ids=tuple(label_ids or ()),
             max_results=max_results,
             max_workers=max_workers,
             max_attempts=max_attempts,
