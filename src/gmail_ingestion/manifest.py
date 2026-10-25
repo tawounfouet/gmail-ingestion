@@ -57,6 +57,7 @@ class GmailRunManifest:
     message_limit: int | None = None
     query: str | None = None
     label_ids: tuple[str, ...] = ()
+    gmail_filter: GmailFilter | None = None
     mime_parts: int = 0
     mime_messages_processed: int = 0
     mime_messages_failed: int = 0
@@ -71,13 +72,15 @@ class GmailRunManifest:
     storage_paths: dict[str, str] = field(default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
-        gmail_filter = GmailFilter(
+        gmail_filter = self.gmail_filter or GmailFilter(
             query=self.query,
             label_ids=self.label_ids,
             include_spam_trash=self.include_spam_trash,
         )
         if self.message_limit is not None:
             mode = "sample_snapshot"
+        elif gmail_filter.scope_kind == "range":
+            mode = "range_snapshot"
         elif gmail_filter.is_filtered:
             mode = "filtered_snapshot"
         else:
@@ -100,8 +103,11 @@ class GmailRunManifest:
                 "fingerprint": gmail_filter.scope_fingerprint,
             },
             "filters": {
-                "query": self.query,
+                "query": gmail_filter.query,
                 "label_ids": list(gmail_filter.canonical_label_ids),
+                "after": gmail_filter.requested_payload()["after"],
+                "before": gmail_filter.requested_payload()["before"],
+                "last_days": gmail_filter.requested_payload()["last_days"],
             },
             "requested_filter": gmail_filter.requested_payload(),
             "effective_filter": gmail_filter.effective_payload(),
@@ -176,12 +182,13 @@ class ManifestWriter:
         message_limit: int | None = None,
         query: str | None = None,
         label_ids: tuple[str, ...] = (),
+        gmail_filter: GmailFilter | None = None,
     ) -> None:
         payload = self.load_payload(run_id)
         if payload is None:
             return
 
-        gmail_filter = GmailFilter(
+        active_filter = gmail_filter or GmailFilter(
             query=query,
             label_ids=label_ids,
             include_spam_trash=include_spam_trash,
@@ -196,12 +203,12 @@ class ManifestWriter:
                 actual_label_ids = tuple(sorted(set(raw_label_ids)))
 
         expected = {
-            "include_spam_trash": include_spam_trash,
+            "include_spam_trash": active_filter.include_spam_trash,
             "download_attachments": download_attachments,
             "max_attachment_bytes": max_attachment_bytes,
             "message_limit": message_limit,
-            "query": query,
-            "label_ids": gmail_filter.canonical_label_ids,
+            "query": active_filter.query,
+            "label_ids": active_filter.canonical_label_ids,
         }
         for key, value in expected.items():
             if key == "query":
@@ -215,12 +222,30 @@ class ManifestWriter:
                     f"Cannot resume run {run_id}: setting {key!r} differs from the manifest"
                 )
 
+        requested_filter = payload.get("requested_filter")
+        if isinstance(requested_filter, dict):
+            requested_expected = active_filter.requested_payload()
+            for key in ("after", "before", "last_days"):
+                if requested_filter.get(key) != requested_expected[key]:
+                    raise ValueError(
+                        f"Cannot resume run {run_id}: setting {key!r} differs from the manifest"
+                    )
+
+        effective_filter = payload.get("effective_filter")
+        if isinstance(effective_filter, dict) and active_filter.date_range is not None:
+            expected_resolution = active_filter.effective_payload()["resolution_timestamp"]
+            if effective_filter.get("resolution_timestamp") != expected_resolution:
+                raise ValueError(
+                    f"Cannot resume run {run_id}: relative date resolution differs "
+                    "from the manifest"
+                )
+
         scope = payload.get("scope")
         if isinstance(scope, dict):
             actual_fingerprint = scope.get("fingerprint")
             if (
                 isinstance(actual_fingerprint, str)
-                and actual_fingerprint != gmail_filter.scope_fingerprint
+                and actual_fingerprint != active_filter.scope_fingerprint
             ):
                 raise ValueError(
                     f"Cannot resume run {run_id}: effective Gmail filter scope differs "
