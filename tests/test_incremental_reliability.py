@@ -10,15 +10,19 @@ from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api import GmailApiError, GmailHistoryExpiredError
 from gmail_ingestion.application import (
+    FullSnapshotRecoveryError,
     IncrementalHistorySync,
     ReliableIncrementalSync,
 )
 from gmail_ingestion.domain import GmailCheckpoint, map_history_events
 from gmail_ingestion.persistence import (
     CheckpointConflictError,
+    HistoryEventWriter,
     IncrementalManifestWriter,
     LocalCheckpointStore,
     LocalHistoryReceiptStore,
+    RawHistoryWriter,
+    RawMessageWriter,
 )
 
 ACCOUNT_ID = "acct_0123456789abcdef01234567"
@@ -377,3 +381,150 @@ def test_expired_cursor_recovers_with_snapshot_bootstrap_then_catch_up(
     committed = checkpoints.load_committed(ACCOUNT_ID)
     assert committed is not None
     assert committed.history_id == "510"
+
+
+
+def test_pending_event_with_effect_already_persisted_reuses_effect_and_completes(
+    tmp_path: Path,
+) -> None:
+    artifacts = LocalArtifactStore(tmp_path / "artifacts")
+    checkpoints = LocalCheckpointStore(tmp_path / "control")
+    receipts = LocalHistoryReceiptStore(tmp_path / "control")
+    _seed(checkpoints)
+
+    page = {
+        "history": [
+            {
+                "id": "101",
+                "messagesAdded": [{"message": {"id": "m1", "threadId": "t1"}}],
+            }
+        ],
+        "historyId": "110",
+    }
+    RawHistoryWriter(artifacts).write_page(
+        RUN_ID,
+        0,
+        page,
+        start_history_id="100",
+        page_token=None,
+    )
+    pending = map_history_events(
+        account_id=ACCOUNT_ID,
+        run_id=RUN_ID,
+        page=page,
+        observed_at=T1,
+        source_page_token=None,
+    )[0]
+    event_writer = HistoryEventWriter(artifacts)
+    event_writer.write(pending)
+    RawMessageWriter(artifacts).write(
+        RUN_ID,
+        "m1",
+        _message("m1", "t1"),
+    )
+
+    history = _History({})
+    messages = _Messages({})
+    result = IncrementalHistorySync(
+        _Provider(),
+        artifacts,
+        checkpoints,
+        receipt_store=receipts,
+        client_factory=_factory(history, messages),
+    ).run(run_id=RUN_ID)
+
+    assert history.calls == []
+    assert messages.calls == []
+    assert result.reused_pages == 1
+    assert result.messages_reused == 1
+    assert result.messages_hydrated == 0
+    assert result.output_history_id == "110"
+
+    processed = event_writer.read(RUN_ID, pending.event_id)
+    assert processed is not None
+    assert processed.processing_status.value == "PROCESSED"
+    assert receipts.load(ACCOUNT_ID, pending.event_id) is not None
+
+
+def test_committed_same_run_is_recovered_without_recontacting_gmail(
+    tmp_path: Path,
+) -> None:
+    artifacts = LocalArtifactStore(tmp_path / "artifacts")
+    checkpoints = LocalCheckpointStore(tmp_path / "control")
+    _seed(checkpoints)
+
+    candidate = GmailCheckpoint.candidate(
+        account_id=ACCOUNT_ID,
+        history_id="125",
+        run_id=RUN_ID,
+        created_at=T1,
+    )
+    checkpoints.save_candidate(candidate)
+    committed = checkpoints.commit(
+        candidate,
+        expected_committed_history_id="100",
+    )
+    IncrementalManifestWriter(artifacts).write(
+        RUN_ID,
+        {
+            "schema_version": 1,
+            "mode": "incremental_history",
+            "run_id": str(RUN_ID),
+            "account_id": ACCOUNT_ID,
+            "started_at": T1.isoformat(),
+            "status": "READY_TO_COMMIT",
+            "input_checkpoint": "100",
+            "candidate_checkpoint": "125",
+            "pages_scanned": 2,
+            "events_persisted": 4,
+        },
+    )
+
+    def forbidden_factory(**kwargs: object) -> _Client:
+        raise AssertionError("Gmail must not be contacted after the run already committed")
+
+    result = IncrementalHistorySync(
+        _Provider(),
+        artifacts,
+        checkpoints,
+        receipt_store=LocalHistoryReceiptStore(tmp_path / "control"),
+        client_factory=forbidden_factory,
+    ).run(run_id=RUN_ID)
+
+    assert result.recovered is True
+    assert result.committed_checkpoint == committed
+    assert result.input_history_id == "100"
+    assert result.output_history_id == "125"
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["status"] == "RECOVERED_COMMIT"
+
+
+def test_partial_snapshot_recovery_is_rejected_without_seeding_checkpoint(
+    tmp_path: Path,
+) -> None:
+    artifacts = LocalArtifactStore(tmp_path / "artifacts")
+    checkpoints = LocalCheckpointStore(tmp_path / "control")
+    snapshot_runner = _SnapshotRunner(
+        _SnapshotResult(
+            UUID("00000000-0000-0000-0000-000000000698"),
+            manifest_status="PARTIAL",
+        )
+    )
+
+    def snapshot_factory(*args: object, **kwargs: object) -> _SnapshotRunner:
+        return snapshot_runner
+
+    def forbidden_factory(**kwargs: object) -> _Client:
+        raise AssertionError("Gmail API client is not needed before snapshot bootstrap")
+
+    with pytest.raises(FullSnapshotRecoveryError, match="did not complete cleanly"):
+        ReliableIncrementalSync(
+            _Provider(),
+            artifacts,
+            checkpoints,
+            receipt_store=LocalHistoryReceiptStore(tmp_path / "control"),
+            client_factory=forbidden_factory,
+            snapshot_factory=snapshot_factory,
+        ).run(run_id=RUN_ID)
+
+    assert checkpoints.load_committed(ACCOUNT_ID) is None
