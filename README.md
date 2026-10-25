@@ -204,10 +204,12 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.3.0.md`
+- `docs/releases/v0.3.0-qualification.md`
+- `docs/releases/COMPATIBILITY-v0.3.0.md`
+- `docs/releases/MIGRATION-v0.3.0.md`
+- `docs/runbooks/FILTERED_INGESTION.md`
 - `docs/releases/v0.2.0.md`
-- `docs/releases/v0.2.0-qualification.md`
-- `docs/releases/COMPATIBILITY-v0.2.0.md`
-- `docs/releases/MIGRATION-v0.2.0.md`
 - `docs/runbooks/NORMALIZED_DATASET.md`
 
 ## Roadmap
