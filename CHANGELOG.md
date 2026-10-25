@@ -4,6 +4,28 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.2.0a1 — Normalized Data Model
+
+### Added
+
+- versioned normalized schema contract v1 for accounts, labels, messages, threads, headers,
+  recipients, message-label relations, MIME parts and attachments;
+- deterministic RAW-to-normalized transformation with no Gmail API calls in the normalization path;
+- explicit grains and logical keys for every normalized table;
+- canonical multi-valued relations for recipients, headers and labels;
+- thread aggregation derived from normalized messages;
+- stable Parquet persistence under the normalized candidate namespace;
+- schema and quality artifacts alongside Parquet outputs;
+- logical PK/FK checks and attachment quality rules;
+- deterministic round-trip qualification from RAW fixtures to Parquet and reload.
+
+### Contract
+
+```text
+normalized_schema_version = 1
+```
+
+
 ## 0.1.0 — 2026-10-25 — Snapshot Foundation Stable
 
 ### Changed
