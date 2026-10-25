@@ -34,3 +34,5 @@ secrets/
 # Local Gmail ingestion state / data
 data/
 .gmail-ingestion/
+.gmail-ingestion-live/
+qualification/

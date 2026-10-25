@@ -4,6 +4,48 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.1.0 — 2026-10-25 — Snapshot Foundation Stable
+
+### Changed
+
+- promote the qualified Snapshot Foundation contract without Gmail semantic drift;
+- pin PyIngestKit from moving `main` to stable `v2.1.0`;
+- add clean wheel/sdist build and SHA-256 release evidence;
+- record Python/PyIngestKit compatibility and no-migration promotion notes;
+- add a redacted real-mailbox qualification script;
+- persist the exact Gmail `nextPageToken` for mid-discovery resume;
+- bound hydration futures instead of submitting the entire mailbox at once;
+- checkpoint discovery/fetch state in batches rather than after every hydrated message;
+- add a bounded live qualification sample mode for large mailboxes;
+- add deterministic `has:attachment` qualification for the binary path;
+- bound physical attachment filenames with SHA-256-derived keys for filesystem portability;
+- ignore local live-mailbox and qualification artifacts.
+
+### Automated qualification
+
+The qualified stable candidate `b08dde3220d583293dbd1eee96e35761f4194a98` is green on
+Python 3.11, 3.12 and 3.13:
+
+```text
+43/43 tests
+Ruff
+mypy strict
+CLI smoke
+wheel + sdist build
+twine check
+clean wheel install
+PyIngestKit 2.1.0 verification
+SHA-256 generation
+```
+
+### Release gate
+
+The package's own real Gmail Desktop OAuth E2E passed on 2026-10-25. The bounded qualification
+processed 50 real messages, resumed the same run without count drift, and separately processed
+10 `has:attachment` messages with 10 successful attachment downloads and zero attachment failures.
+
+The stable release is approved for merge and publication after post-merge CI.
+
 ## 0.1.0rc1 — Snapshot Qualification
 
 ### Added
@@ -19,16 +61,10 @@ The project follows Semantic Versioning with pre-release milestones during the p
 - secret-leak assertions across generated run artifacts;
 - dedicated RC1 real-mailbox qualification runbook.
 
-### Changed
-
-- package version advanced from `0.1.0b2` to `0.1.0rc1`;
-- README and examples now describe the complete Snapshot Foundation candidate.
-
 ### Qualification status
 
-Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict reports no issues across 46 source files.
-
-The real Gmail mailbox E2E remains the release gate before `0.1.0` stable.
+Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict
+reports no issues across 46 source files.
 
 ## 0.1.0b2 — MIME + Attachments + Manifest
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import PurePath
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -13,6 +16,7 @@ from pyingestkit.core.exceptions import StorageError
 from gmail_ingestion.domain import AttachmentCandidate
 
 _JOB_ID = "gmail.attachments"
+_SAFE_EXTENSION = re.compile(r"^\.[A-Za-z0-9]{1,15}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +73,21 @@ class AttachmentBinaryWriter:
 
     @staticmethod
     def _name(message_id: str, candidate: AttachmentCandidate) -> str:
+        """Return a short deterministic physical filename.
+
+        Gmail attachment IDs can be hundreds of characters long. They remain available in
+        attachment metadata/source URIs but must never be copied verbatim into filesystem names.
+        """
         source_ref = candidate.attachment_id or candidate.part_path
-        filename = candidate.filename or "binary"
-        return f"attachment-{message_id}-{source_ref}-{filename}"
+        message_key = sha256(message_id.encode("utf-8")).hexdigest()[:16]
+        source_key = sha256(source_ref.encode("utf-8")).hexdigest()[:32]
+        extension = _safe_extension(candidate.filename)
+        return f"attachment-{message_key}-{source_key}{extension}"
+
+
+def _safe_extension(filename: str) -> str:
+    """Preserve a short conventional extension without trusting the original filename."""
+    if not filename:
+        return ""
+    suffix = PurePath(filename).suffix.lower()
+    return suffix if _SAFE_EXTENSION.fullmatch(suffix) else ""

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import local
@@ -50,6 +50,9 @@ class GmailClientProtocol(AttachmentClientProtocol, Protocol):
 ClientFactory = Callable[..., GmailApiClient]
 SleepFn = Callable[[float], None]
 
+_DEFAULT_QUEUE_CHECKPOINT_BATCH_SIZE = 1000
+_MAX_IN_FLIGHT_MULTIPLIER = 2
+
 
 @dataclass(frozen=True, slots=True)
 class FullSnapshotResult:
@@ -86,11 +89,15 @@ class FullMessageSnapshot:
         *,
         client_factory: ClientFactory = GmailApiClient,
         retry_sleep: SleepFn | None = None,
+        queue_checkpoint_batch_size: int = _DEFAULT_QUEUE_CHECKPOINT_BATCH_SIZE,
     ) -> None:
+        if queue_checkpoint_batch_size < 1:
+            raise ValueError("queue_checkpoint_batch_size must be >= 1")
         self.provider = provider
         self.artifact_store = artifact_store
         self.client_factory = client_factory
         self.retry_sleep = retry_sleep
+        self.queue_checkpoint_batch_size = queue_checkpoint_batch_size
 
     def run(
         self,
@@ -103,6 +110,8 @@ class FullMessageSnapshot:
         max_attempts: int = 5,
         download_attachments: bool = False,
         max_attachment_bytes: int | None = None,
+        message_limit: int | None = None,
+        query: str | None = None,
     ) -> FullSnapshotResult:
         """Run or resume a full Gmail snapshot through MIME/attachment analysis."""
         if not 1 <= max_results <= 500:
@@ -113,6 +122,10 @@ class FullMessageSnapshot:
             raise ValueError("max_attempts must be >= 1")
         if max_attachment_bytes is not None and max_attachment_bytes < 1:
             raise ValueError("max_attachment_bytes must be >= 1 when provided")
+        if message_limit is not None and message_limit < 1:
+            raise ValueError("message_limit must be >= 1 when provided")
+        if query is not None and not query.strip():
+            raise ValueError("query must not be empty when provided")
 
         resolved, credentials = self.provider.load(account_id)
         source_client = cast(GmailClientProtocol, self.client_factory(credentials=credentials))
@@ -126,6 +139,8 @@ class FullMessageSnapshot:
             include_spam_trash=include_spam_trash,
             download_attachments=download_attachments,
             max_attachment_bytes=max_attachment_bytes,
+            message_limit=message_limit,
+            query=query,
         )
         existing_started_at = manifest_writer.existing_started_at(actual_run_id)
         started_at = existing_started_at or datetime.now(UTC)
@@ -150,6 +165,8 @@ class FullMessageSnapshot:
                     include_spam_trash=include_spam_trash,
                     download_attachments=download_attachments,
                     max_attachment_bytes=max_attachment_bytes,
+                    message_limit=message_limit,
+                    query=query,
                     resumed=resumed,
                 )
             )
@@ -160,6 +177,8 @@ class FullMessageSnapshot:
                     queue,
                     include_spam_trash=include_spam_trash,
                     max_results=max_results,
+                    message_limit=message_limit,
+                    query=query,
                 )
 
             writer = RawMessageWriter(self.artifact_store)
@@ -173,35 +192,13 @@ class FullMessageSnapshot:
 
             retry = self._retry_policy(max_attempts)
             workers = _WorkerClientPool(self.client_factory, credentials)
-            pending = queue.pending()
-            if pending:
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures: dict[Future[tuple[Mapping[str, Any], int]], str] = {
-                        executor.submit(
-                            _fetch_with_retry,
-                            workers,
-                            record.message_id,
-                            retry,
-                        ): record.message_id
-                        for record in pending
-                    }
-                    for future in as_completed(futures):
-                        message_id = futures[future]
-                        try:
-                            payload, attempts = future.result()
-                        except MessageFetchFailure as exc:
-                            queue.mark_failed(
-                                message_id,
-                                attempts=exc.attempts,
-                                error_code="GMAIL_API_ERROR",
-                                error_message=str(exc),
-                            )
-                            queue.persist()
-                            continue
-
-                        writer.write(actual_run_id, message_id, payload)
-                        queue.mark_fetched(message_id, attempts=attempts)
-                        queue.persist()
+            self._hydrate_pending(
+                queue,
+                writer,
+                workers,
+                retry,
+                max_workers=max_workers,
+            )
 
             processing = MessagePostProcessor(
                 self.artifact_store,
@@ -231,6 +228,8 @@ class FullMessageSnapshot:
                 include_spam_trash=include_spam_trash,
                 download_attachments=download_attachments,
                 max_attachment_bytes=max_attachment_bytes,
+                message_limit=message_limit,
+                query=query,
                 resumed=resumed,
                 processing=processing,
                 errors=errors,
@@ -278,6 +277,8 @@ class FullMessageSnapshot:
                             include_spam_trash=include_spam_trash,
                             download_attachments=download_attachments,
                             max_attachment_bytes=max_attachment_bytes,
+                            message_limit=message_limit,
+                            query=query,
                             resumed=queue.loaded_existing or existing_started_at is not None,
                             errors=(issue,),
                         )
@@ -286,6 +287,72 @@ class FullMessageSnapshot:
                     pass
             raise
 
+    def _hydrate_pending(
+        self,
+        queue: MessageDiscoveryQueue,
+        writer: RawMessageWriter,
+        workers: _WorkerClientPool,
+        retry: RetryPolicy,
+        *,
+        max_workers: int,
+    ) -> None:
+        pending = iter(queue.iter_pending())
+        in_flight: dict[Future[tuple[Mapping[str, Any], int]], str] = {}
+        dirty = 0
+        max_in_flight = max_workers * _MAX_IN_FLIGHT_MULTIPLIER
+
+        def submit_next(executor: ThreadPoolExecutor) -> bool:
+            try:
+                record = next(pending)
+            except StopIteration:
+                return False
+            future = executor.submit(
+                _fetch_with_retry,
+                workers,
+                record.message_id,
+                retry,
+            )
+            in_flight[future] = record.message_id
+            return True
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for _ in range(max_in_flight):
+                if not submit_next(executor):
+                    break
+
+            try:
+                while in_flight:
+                    done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+                    for future in done:
+                        message_id = in_flight.pop(future)
+                        try:
+                            payload, attempts = future.result()
+                        except MessageFetchFailure as exc:
+                            queue.mark_failed(
+                                message_id,
+                                attempts=exc.attempts,
+                                error_code="GMAIL_API_ERROR",
+                                error_message=str(exc),
+                            )
+                        else:
+                            writer.write(queue.run_id, message_id, payload)
+                            queue.mark_fetched(message_id, attempts=attempts)
+
+                        dirty += 1
+                        if dirty >= self.queue_checkpoint_batch_size:
+                            queue.persist()
+                            dirty = 0
+                        submit_next(executor)
+            except KeyboardInterrupt:
+                if dirty:
+                    queue.persist()
+                for future in in_flight:
+                    future.cancel()
+                raise
+
+        if dirty:
+            queue.persist()
+
     def _discover(
         self,
         client: GmailClientProtocol,
@@ -293,24 +360,42 @@ class FullMessageSnapshot:
         *,
         include_spam_trash: bool,
         max_results: int,
+        message_limit: int | None,
+        query: str | None,
     ) -> None:
-        page_token: str | None = None
-        page_index = 0
+        if message_limit is not None and len(queue.records) >= message_limit:
+            queue.mark_discovery_complete()
+            queue.persist()
+            return
+
+        page_token = queue.next_page_token
+        page_index = queue.pages_scanned if page_token is not None else 0
 
         while True:
             page = client.messages.list_messages(
                 page_token=page_token,
                 max_results=max_results,
                 include_spam_trash=include_spam_trash,
+                query=query,
             )
-            queue.merge_page(_message_refs(page), page_index=page_index)
-            queue.persist()
+            refs = _message_refs(page)
+            if message_limit is not None:
+                remaining = message_limit - len(queue.records)
+                refs = refs[:remaining]
+            queue.merge_page(refs, page_index=page_index)
 
-            page_token = _next_page_token(page)
-            if page_token is None:
+            if message_limit is not None and len(queue.records) >= message_limit:
                 queue.mark_discovery_complete()
                 queue.persist()
                 return
+
+            next_page_token = _next_page_token(page)
+            queue.checkpoint_discovery_page(next_page_token)
+            queue.persist()
+            if next_page_token is None:
+                return
+
+            page_token = next_page_token
             page_index += 1
 
     def _retry_policy(self, max_attempts: int) -> RetryPolicy:
@@ -336,6 +421,8 @@ class FullMessageSnapshot:
         include_spam_trash: bool,
         download_attachments: bool,
         max_attachment_bytes: int | None,
+        message_limit: int | None,
+        query: str | None,
         resumed: bool,
         processing: MessageProcessingSummary | None = None,
         errors: tuple[ManifestIssue, ...] = (),
@@ -354,6 +441,8 @@ class FullMessageSnapshot:
             messages_discovered=len(queue.records),
             messages_fetched=queue.fetched_count,
             messages_failed=queue.failed_count,
+            message_limit=message_limit,
+            query=query,
             mime_parts=processing.mime_parts if processing is not None else 0,
             mime_messages_processed=(
                 processing.mime_messages_processed if processing is not None else 0
