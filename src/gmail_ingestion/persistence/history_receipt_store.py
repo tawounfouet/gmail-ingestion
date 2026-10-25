@@ -16,7 +16,7 @@ from uuid import UUID
 from gmail_ingestion.domain import GmailHistoryEvent
 
 _ACCOUNT_ID_RE = re.compile(r"^acct_[0-9a-f]{24}$")
-_RECEIPT_SCHEMA_VERSION = "1"
+HISTORY_RECEIPT_SCHEMA_VERSION = "1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +31,7 @@ class HistoryEventReceipt:
     label_id: str | None
     source_run_id: UUID
     applied_at: datetime
-    schema_version: str = _RECEIPT_SCHEMA_VERSION
+    schema_version: str = HISTORY_RECEIPT_SCHEMA_VERSION
 
 
 class GmailHistoryReceiptStore(Protocol):
@@ -163,7 +163,7 @@ def _to_payload(receipt: HistoryEventReceipt) -> dict[str, str | None]:
 
 def _from_payload(payload: Mapping[str, Any]) -> HistoryEventReceipt:
     schema_version = payload.get("receipt_schema_version")
-    if schema_version != _RECEIPT_SCHEMA_VERSION:
+    if schema_version != HISTORY_RECEIPT_SCHEMA_VERSION:
         raise ValueError("Unsupported History event receipt schema version")
     applied_raw = payload.get("applied_at")
     if not isinstance(applied_raw, str):
@@ -180,7 +180,7 @@ def _from_payload(payload: Mapping[str, Any]) -> HistoryEventReceipt:
         label_id=_optional(payload, "label_id"),
         source_run_id=UUID(_required(payload, "source_run_id")),
         applied_at=applied_at,
-        schema_version=_RECEIPT_SCHEMA_VERSION,
+        schema_version=HISTORY_RECEIPT_SCHEMA_VERSION,
     )
 
 

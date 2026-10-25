@@ -10,6 +10,7 @@ from .checkpoint_store import (
     LocalCheckpointStore,
 )
 from .history_receipt_store import (
+    HISTORY_RECEIPT_SCHEMA_VERSION,
     GmailHistoryReceiptStore,
     HistoryEventReceipt,
     LocalHistoryReceiptStore,
@@ -31,6 +32,7 @@ __all__ = [
     "ExistingAttachmentBinary",
     "GmailCheckpointStore",
     "GmailHistoryReceiptStore",
+    "HISTORY_RECEIPT_SCHEMA_VERSION",
     "HistoryEventReceipt",
     "HistoryEventWriter",
     "IncrementalManifestWriter",
