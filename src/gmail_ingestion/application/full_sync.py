@@ -222,6 +222,7 @@ class FullMessageSnapshot:
                 include_spam_trash=include_spam_trash,
                 download_attachments=download_attachments,
                 max_attachment_bytes=max_attachment_bytes,
+                message_limit=message_limit,
                 resumed=resumed,
                 processing=processing,
                 errors=errors,

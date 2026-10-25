@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -137,7 +137,7 @@ class MessageDiscoveryQueue:
         self.next_page_token = None
         self.discovery_complete = True
 
-    def iter_pending(self):
+    def iter_pending(self) -> Iterator[MessageDiscoveryRecord]:
         """Yield records that still need a confirmed immutable RAW message."""
         return (
             record
