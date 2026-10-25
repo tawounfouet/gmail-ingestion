@@ -4,6 +4,32 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.3.0a1 — 2026-10-25 — Search Filters
+
+### Added
+
+- immutable `GmailFilter` contract for explicit Gmail discovery scope;
+- Gmail-native `q` search support exposed through the library and CLI;
+- repeatable `labelIds` filtering with deterministic canonicalization;
+- explicit `includeSpamTrash` capture as part of effective scope;
+- `FilteredMessageSnapshot` use case reusing the stable snapshot pipeline;
+- requested and effective filter evidence in the manifest;
+- deterministic SHA-256 scope fingerprint;
+- resume protection against changed query/label/spam-trash scope;
+- pagination tests proving filters remain applied across every discovery page.
+
+### Compatibility contract
+
+```text
+normalized_schema_version = 1
+RAW semantics              = unchanged
+OAuth scope                = gmail.readonly
+incremental checkpoints    = not introduced
+```
+
+Date ranges (`after`, `before`, `last N days`) remain deliberately reserved for
+`0.3.0b1`.
+
 ## 0.2.0 — 2026-10-25 — Normalized Dataset Stable
 
 ### Added
