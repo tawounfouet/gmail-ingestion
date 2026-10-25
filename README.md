@@ -2,11 +2,11 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Stable release:** `v0.2.0 — Normalized Dataset Stable`  
-> **Current development target:** `v0.3.0b1 — Date Range / Filtered Sync`
+> **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
+> **Current development target:** `v0.4.0 — Incremental History Sync`
 
-`0.2.0` is frozen as the stable normalized-data foundation. `0.3.0b1` extends the qualified
-search-filter slice with deterministic absolute and relative date ranges, without changing normalized schema v1.
+`0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
+label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
 
 ```text
 Gmail API
@@ -39,7 +39,7 @@ PyIngestKit       v2.1.0 verified
 ```
 
 The source-extraction layer remains based on the qualified `gmail.readonly` Snapshot Foundation.
-The `0.3.0a1` work changes message discovery scope only; RAW hydration and normalization remain unchanged.
+The `0.3.0` release changes message discovery scope only; RAW hydration and normalization remain unchanged.
 
 ## Stable normalized contract
 
@@ -206,6 +206,7 @@ python -m twine check dist/*
 
 - `docs/releases/v0.3.0.md`
 - `docs/releases/v0.3.0-qualification.md`
+- `docs/releases/v0.3.0-evidence.md`
 - `docs/releases/COMPATIBILITY-v0.3.0.md`
 - `docs/releases/MIGRATION-v0.3.0.md`
 - `docs/runbooks/FILTERED_INGESTION.md`
@@ -222,8 +223,9 @@ python -m twine check dist/*
 0.2.0rc1   Normalization Qualification          ✅
 0.2.0      Normalized Dataset Stable            ✅ released / frozen
 0.3.0a1    Search Filters                        ✅ qualified slice
-0.3.0b1    Date Range / Filtered Sync            🚧 current
-0.3.0      Filtered Ingestion Stable             next
+0.3.0b1    Date Range / Filtered Sync            ✅ qualified
+0.3.0      Filtered Ingestion Stable             ✅ stable
+0.4.0      Incremental History Sync               next
 ```
 
 ## License
