@@ -11,7 +11,11 @@ import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api.messages import GmailMessagesApi
-from gmail_ingestion.application import FilteredMessageSnapshot, FullMessageSnapshot, RangeMessageSnapshot
+from gmail_ingestion.application import (
+    FilteredMessageSnapshot,
+    FullMessageSnapshot,
+    RangeMessageSnapshot,
+)
 from gmail_ingestion.auth.store import LocalCredentialStore
 from gmail_ingestion.domain import DateRange, GmailAccount, GmailFilter
 
