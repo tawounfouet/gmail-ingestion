@@ -79,10 +79,14 @@ class GmailMessagesApi:
 
 def _http_status(exc: BaseException) -> int | None:
     response = getattr(exc, "resp", None)
-    value = getattr(response, "status", None)
+    value: object = getattr(response, "status", None)
     if isinstance(value, bool):
         return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
