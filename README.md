@@ -308,6 +308,7 @@ python -m twine check dist/*
 ## Release documentation
 
 - `docs/releases/v0.4.0b1.md`
+- `docs/releases/v0.4.0b1-qualification.md`
 - `docs/runbooks/INCREMENTAL_HISTORY_SYNC.md`
 - `docs/releases/v0.4.0a1.md`
 - `docs/runbooks/CHECKPOINT_FOUNDATION.md`
@@ -333,8 +334,8 @@ python -m twine check dist/*
 0.3.0b1    Date Range / Filtered Sync            ✅ qualified
 0.3.0      Filtered Ingestion Stable             ✅ stable
 0.4.0a1    Checkpoint Foundation                  ✅ qualified
-0.4.0b1    Gmail History Incremental               ← current
-0.4.0b2    Deletions + Label Mutations             planned
+0.4.0b1    Gmail History Incremental               ✅ qualified
+0.4.0b2    Deletions + Label Mutations             ← next
 0.4.0rc1   Incremental Reliability                 planned
 0.4.0      Incremental Sync Stable                 planned
 ```
