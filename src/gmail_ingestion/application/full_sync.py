@@ -111,6 +111,7 @@ class FullMessageSnapshot:
         download_attachments: bool = False,
         max_attachment_bytes: int | None = None,
         message_limit: int | None = None,
+        query: str | None = None,
     ) -> FullSnapshotResult:
         """Run or resume a full Gmail snapshot through MIME/attachment analysis."""
         if not 1 <= max_results <= 500:
@@ -123,6 +124,8 @@ class FullMessageSnapshot:
             raise ValueError("max_attachment_bytes must be >= 1 when provided")
         if message_limit is not None and message_limit < 1:
             raise ValueError("message_limit must be >= 1 when provided")
+        if query is not None and not query.strip():
+            raise ValueError("query must not be empty when provided")
 
         resolved, credentials = self.provider.load(account_id)
         source_client = cast(GmailClientProtocol, self.client_factory(credentials=credentials))
@@ -137,6 +140,7 @@ class FullMessageSnapshot:
             download_attachments=download_attachments,
             max_attachment_bytes=max_attachment_bytes,
             message_limit=message_limit,
+            query=query,
         )
         existing_started_at = manifest_writer.existing_started_at(actual_run_id)
         started_at = existing_started_at or datetime.now(UTC)
@@ -162,6 +166,7 @@ class FullMessageSnapshot:
                     download_attachments=download_attachments,
                     max_attachment_bytes=max_attachment_bytes,
                     message_limit=message_limit,
+                    query=query,
                     resumed=resumed,
                 )
             )
@@ -173,6 +178,7 @@ class FullMessageSnapshot:
                     include_spam_trash=include_spam_trash,
                     max_results=max_results,
                     message_limit=message_limit,
+                    query=query,
                 )
 
             writer = RawMessageWriter(self.artifact_store)
@@ -223,6 +229,7 @@ class FullMessageSnapshot:
                 download_attachments=download_attachments,
                 max_attachment_bytes=max_attachment_bytes,
                 message_limit=message_limit,
+                query=query,
                 resumed=resumed,
                 processing=processing,
                 errors=errors,
@@ -271,6 +278,7 @@ class FullMessageSnapshot:
                             download_attachments=download_attachments,
                             max_attachment_bytes=max_attachment_bytes,
                             message_limit=message_limit,
+                            query=query,
                             resumed=queue.loaded_existing or existing_started_at is not None,
                             errors=(issue,),
                         )
@@ -353,6 +361,7 @@ class FullMessageSnapshot:
         include_spam_trash: bool,
         max_results: int,
         message_limit: int | None,
+        query: str | None,
     ) -> None:
         if message_limit is not None and len(queue.records) >= message_limit:
             queue.mark_discovery_complete()
@@ -367,6 +376,7 @@ class FullMessageSnapshot:
                 page_token=page_token,
                 max_results=max_results,
                 include_spam_trash=include_spam_trash,
+                query=query,
             )
             refs = _message_refs(page)
             if message_limit is not None:
@@ -412,6 +422,7 @@ class FullMessageSnapshot:
         download_attachments: bool,
         max_attachment_bytes: int | None,
         message_limit: int | None,
+        query: str | None,
         resumed: bool,
         processing: MessageProcessingSummary | None = None,
         errors: tuple[ManifestIssue, ...] = (),
@@ -431,6 +442,7 @@ class FullMessageSnapshot:
             messages_fetched=queue.fetched_count,
             messages_failed=queue.failed_count,
             message_limit=message_limit,
+            query=query,
             mime_parts=processing.mime_parts if processing is not None else 0,
             mime_messages_processed=(
                 processing.mime_messages_processed if processing is not None else 0

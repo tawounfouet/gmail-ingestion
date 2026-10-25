@@ -48,6 +48,12 @@ def _parse_args() -> argparse.Namespace:
         help="Qualify the entire mailbox instead of the bounded sample.",
     )
     parser.add_argument("--download-attachments", action="store_true")
+    parser.add_argument(
+        "--attachment-sample-size",
+        type=int,
+        default=10,
+        help="Maximum has:attachment messages used for attachment qualification.",
+    )
     parser.add_argument("--max-attachment-bytes", type=int)
     parser.add_argument("--require-attachment", action="store_true")
     return parser.parse_args()
@@ -86,6 +92,8 @@ def main() -> int:
 
     if args.sample_size < 1:
         raise SystemExit("--sample-size must be >= 1")
+    if args.attachment_sample_size < 1:
+        raise SystemExit("--attachment-sample-size must be >= 1")
 
     message_limit = None if args.full_mailbox else args.sample_size
     provider = build_provider(Path("credentials.json"), args.credential_dir)
@@ -115,6 +123,18 @@ def main() -> int:
         message_limit=message_limit,
     )
 
+    attachment_snapshot = None
+    if args.require_attachment:
+        attachment_snapshot = FullMessageSnapshot(provider, store).run(
+            account_id,
+            max_workers=args.max_workers,
+            max_attempts=args.max_attempts,
+            download_attachments=args.download_attachments,
+            max_attachment_bytes=args.max_attachment_bytes,
+            message_limit=args.attachment_sample_size,
+            query="has:attachment",
+        )
+
     checks = {
         "profile_reusable_credentials": (
             first_profile.account_id == second_profile.account_id == account_id
@@ -141,14 +161,27 @@ def main() -> int:
             and resumed.fetched_count == snapshot.fetched_count
             and resumed.failed_count == snapshot.failed_count
         ),
-        "attachment_failures_absent": snapshot.attachments_failed == 0,
+        "attachment_failures_absent": (
+            snapshot.attachments_failed == 0
+            and (
+                attachment_snapshot is None
+                or attachment_snapshot.attachments_failed == 0
+            )
+        ),
         "required_attachment_present": (
-            not args.require_attachment or snapshot.attachments_detected > 0
+            not args.require_attachment
+            or (
+                attachment_snapshot is not None
+                and attachment_snapshot.attachments_detected > 0
+            )
         ),
         "required_attachment_downloaded": (
             not args.require_attachment
             or not args.download_attachments
-            or snapshot.attachments_fetched > 0
+            or (
+                attachment_snapshot is not None
+                and attachment_snapshot.attachments_fetched > 0
+            )
         ),
         "oauth_secrets_absent_from_artifacts": not _artifacts_contain_secret(
             args.artifact_root,
@@ -168,6 +201,8 @@ def main() -> int:
             "max_attachment_bytes": args.max_attachment_bytes,
             "require_attachment": args.require_attachment,
             "sample_size": message_limit,
+            "attachment_sample_size": args.attachment_sample_size,
+            "attachment_query": "has:attachment" if args.require_attachment else None,
             "full_mailbox": args.full_mailbox,
         },
         "profile": {
@@ -194,6 +229,22 @@ def main() -> int:
             "bytes_downloaded": snapshot.bytes_downloaded,
             "manifest_status": snapshot.manifest_status,
         },
+        "attachment_snapshot": (
+            {
+                "run_id": str(attachment_snapshot.run_id),
+                "messages_discovered": attachment_snapshot.discovered_count,
+                "messages_fetched": attachment_snapshot.fetched_count,
+                "messages_failed": attachment_snapshot.failed_count,
+                "attachments_detected": attachment_snapshot.attachments_detected,
+                "attachments_fetched": attachment_snapshot.attachments_fetched,
+                "attachments_failed": attachment_snapshot.attachments_failed,
+                "attachments_skipped": attachment_snapshot.attachments_skipped,
+                "bytes_downloaded": attachment_snapshot.bytes_downloaded,
+                "manifest_status": attachment_snapshot.manifest_status,
+            }
+            if attachment_snapshot is not None
+            else None
+        ),
         "resume": {
             "resumed": resumed.resumed,
             "messages_discovered": resumed.discovered_count,

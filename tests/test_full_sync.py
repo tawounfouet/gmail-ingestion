@@ -41,12 +41,18 @@ class _Backend:
         self.fetch_calls: dict[str, int] = {}
         self.list_calls = 0
         self.list_tokens: list[str | None] = []
+        self.list_queries: list[str | None] = []
         self.lock = Lock()
 
-    def list_page(self, page_token: str | None) -> Mapping[str, Any]:
+    def list_page(
+        self,
+        page_token: str | None,
+        query: str | None = None,
+    ) -> Mapping[str, Any]:
         with self.lock:
             self.list_calls += 1
             self.list_tokens.append(page_token)
+            self.list_queries.append(query)
         page = self.pages[page_token]
         if isinstance(page, Exception):
             raise page
@@ -82,9 +88,8 @@ class _Messages:
     ) -> Mapping[str, Any]:
         assert max_results == 500
         assert include_spam_trash is False
-        assert query is None
         assert label_ids == ()
-        return self.backend.list_page(page_token)
+        return self.backend.list_page(page_token, query)
 
     def get_message(self, message_id: str, *, format: str = "full") -> Mapping[str, Any]:
         assert format == "full"
@@ -346,3 +351,40 @@ def test_hydration_checkpoints_are_batched(tmp_path: Path, monkeypatch) -> None:
 
     assert result.fetched_count == 10
     assert persist_calls == 5
+
+
+def test_snapshot_query_is_forwarded_recorded_and_resume_guarded(tmp_path: Path) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000306")
+    backend = _Backend(
+        {
+            None: {
+                "messages": [{"id": "m1", "threadId": "t1"}],
+            }
+        }
+    )
+
+    result = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id, message_limit=1, query="has:attachment")
+
+    assert result.fetched_count == 1
+    assert backend.list_queries == ["has:attachment"]
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["filters"]["query"] == "has:attachment"
+
+    try:
+        FullMessageSnapshot(
+            provider,
+            store,
+            client_factory=_factory(_Backend({None: {"messages": []}})),
+            retry_sleep=lambda _: None,
+        ).run(run_id=run_id, message_limit=1, query="is:unread")
+    except ValueError as exc:
+        assert "query" in str(exc)
+    else:
+        raise AssertionError("expected resume query mismatch")

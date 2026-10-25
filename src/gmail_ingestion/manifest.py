@@ -54,6 +54,7 @@ class GmailRunManifest:
     messages_fetched: int
     messages_failed: int
     message_limit: int | None = None
+    query: str | None = None
     mime_parts: int = 0
     mime_messages_processed: int = 0
     mime_messages_failed: int = 0
@@ -80,7 +81,7 @@ class GmailRunManifest:
             ),
             "status": self.status,
             "mode": "sample_snapshot" if self.message_limit is not None else "full_snapshot",
-            "filters": {"query": None, "label_ids": []},
+            "filters": {"query": self.query, "label_ids": []},
             "message_limit": self.message_limit,
             "message_format": "full",
             "include_spam_trash": self.include_spam_trash,
@@ -150,6 +151,7 @@ class ManifestWriter:
         download_attachments: bool,
         max_attachment_bytes: int | None,
         message_limit: int | None = None,
+        query: str | None = None,
     ) -> None:
         payload = self.load_payload(run_id)
         if payload is None:
@@ -159,9 +161,11 @@ class ManifestWriter:
             "download_attachments": download_attachments,
             "max_attachment_bytes": max_attachment_bytes,
             "message_limit": message_limit,
+            "query": query,
         }
         for key, value in expected.items():
-            if payload.get(key) != value:
+            actual = payload.get("filters", {}).get("query") if key == "query" else payload.get(key)
+            if actual != value:
                 raise ValueError(
                     f"Cannot resume run {run_id}: setting {key!r} differs from the manifest"
                 )
