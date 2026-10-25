@@ -36,3 +36,8 @@ data/
 .gmail-ingestion/
 .gmail-ingestion-live/
 qualification/
+
+# Incremental control-plane and live qualification roots
+.gmail-ingestion-control/
+.gmail-ingestion-live-*/
+.gmail-ingestion-control-live-*/

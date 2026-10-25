@@ -53,6 +53,9 @@ jobs:
           gmail-ingest snapshot --help
           gmail-ingest range --help
           gmail-ingest incremental --help
+          python scripts/qualify_live_incremental_sync.py --help
+          python scripts/qualify_live_incremental_sync.py prepare --help
+          python scripts/qualify_live_incremental_sync.py verify --help
           python -m gmail_ingestion --help
 
   package:

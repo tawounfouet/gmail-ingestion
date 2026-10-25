@@ -3,7 +3,7 @@
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
 > **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
-> **Current development target:** `v0.4.0rc1 — Incremental Reliability`
+> **Current development target:** `v0.4.0 — Incremental Sync Stable` (live promotion gate pending)
 
 `0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
 label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
@@ -398,6 +398,25 @@ gmail-ingest incremental --no-auto-full-resync
 The rc1 qualification is automated and synthetic. A real-mailbox Gmail E2E is deliberately kept
 as a promotion gate for stable `0.4.0`.
 
+## Stable 0.4.0 live promotion gate
+
+The implementation and automated reliability qualification are complete. Stable promotion now
+requires the real Gmail two-phase gate:
+
+```bash
+python scripts/qualify_live_incremental_sync.py prepare --full-mailbox
+
+# perform the bounded Gmail UI changes printed by the script
+
+python scripts/qualify_live_incremental_sync.py verify
+```
+
+The script uses isolated local artifact/checkpoint roots and never mutates Gmail itself; the
+connector remains `gmail.readonly`. Stable evidence requires all four event types plus same-run
+and cross-run replay checks.
+
+See `docs/runbooks/LIVE_INCREMENTAL_QUALIFICATION.md`.
+
 ## Normalize with the library
 
 ```python
@@ -439,6 +458,8 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.4.0-stable-promotion.md`
+- `docs/runbooks/LIVE_INCREMENTAL_QUALIFICATION.md`
 - `docs/releases/v0.4.0rc1.md`
 - `docs/releases/v0.4.0rc1-qualification.md`
 - `docs/runbooks/INCREMENTAL_RECOVERY.md`
@@ -475,7 +496,7 @@ python -m twine check dist/*
 0.4.0b1    Gmail History Incremental               ✅ qualified
 0.4.0b2    Deletions + Label Mutations             ✅ qualified
 0.4.0rc1   Incremental Reliability                 ✅ qualified
-0.4.0      Incremental Sync Stable                 ← next
+0.4.0      Incremental Sync Stable                 ← live gate pending
 ```
 
 ## License
