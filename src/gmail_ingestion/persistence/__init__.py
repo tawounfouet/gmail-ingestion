@@ -9,6 +9,11 @@ from .checkpoint_store import (
     GmailCheckpointStore,
     LocalCheckpointStore,
 )
+from .history_receipt_store import (
+    GmailHistoryReceiptStore,
+    HistoryEventReceipt,
+    LocalHistoryReceiptStore,
+)
 from .history_writer import HistoryEventWriter, IncrementalManifestWriter, RawHistoryWriter
 from .incremental_mutation_writer import IncrementalMutationWriter
 from .labels_writer import LabelsParquetWriter, LabelsWriteResult
@@ -25,12 +30,15 @@ __all__ = [
     "CheckpointStoreError",
     "ExistingAttachmentBinary",
     "GmailCheckpointStore",
+    "GmailHistoryReceiptStore",
+    "HistoryEventReceipt",
     "HistoryEventWriter",
     "IncrementalManifestWriter",
     "IncrementalMutationWriter",
     "LabelsParquetWriter",
     "LabelsWriteResult",
     "LocalCheckpointStore",
+    "LocalHistoryReceiptStore",
     "MessageAnalysisWriter",
     "NormalizedParquetWriteResult",
     "NormalizedParquetWriter",

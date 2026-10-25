@@ -77,3 +77,4 @@ def test_incremental_help_and_checkpoint_options_are_registered() -> None:
     assert "checkpoint_root" in parameter_names
     assert "artifact_root" in parameter_names
     assert "max_results" in parameter_names
+    assert "auto_full_resync" in parameter_names

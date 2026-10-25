@@ -10,6 +10,11 @@ from .incremental_sync import (
     MissingCommittedCheckpointError,
 )
 from .labels import IngestLabels, LabelsIngestionResult
+from .reliable_incremental import (
+    FullSnapshotRecoveryError,
+    ReliableIncrementalResult,
+    ReliableIncrementalSync,
+)
 from .message_processing import MessagePostProcessor, MessageProcessingSummary
 from .profile import GetMailboxProfile
 from .range_sync import RangeMessageSnapshot
@@ -20,6 +25,7 @@ __all__ = [
     "FullMessageSnapshot",
     "FullSnapshotResult",
     "FullResyncRequiredError",
+    "FullSnapshotRecoveryError",
     "GetMailboxProfile",
     "IncrementalHistoryResult",
     "IncrementalHistorySync",
@@ -29,4 +35,6 @@ __all__ = [
     "MissingCommittedCheckpointError",
     "MessageProcessingSummary",
     "RangeMessageSnapshot",
+    "ReliableIncrementalResult",
+    "ReliableIncrementalSync",
 ]

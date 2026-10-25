@@ -64,6 +64,43 @@ class GmailHistoryEvent:
             processed_at=processed_at or datetime.now(UTC),
         )
 
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> GmailHistoryEvent:
+        """Rehydrate a persisted elementary event for deterministic replay."""
+        try:
+            processed_raw = payload.get("processed_at")
+            processed_at = (
+                datetime.fromisoformat(processed_raw)
+                if isinstance(processed_raw, str) and processed_raw
+                else None
+            )
+            return cls(
+                event_id=_required_string(payload.get("event_id"), "event id"),
+                account_id=_required_string(payload.get("account_id"), "account id"),
+                history_id=_required_string(payload.get("history_id"), "history id"),
+                event_type=GmailHistoryEventType(
+                    _required_string(payload.get("event_type"), "event type")
+                ),
+                message_id=_required_string(payload.get("message_id"), "message id"),
+                thread_id=_optional_string(payload.get("thread_id")),
+                label_id=_optional_string(payload.get("label_id")),
+                event_ordinal=int(payload.get("event_ordinal", 0)),
+                source_page_token=_optional_string(payload.get("source_page_token")),
+                observed_at=datetime.fromisoformat(
+                    _required_string(payload.get("observed_at"), "observed_at")
+                ),
+                run_id=UUID(_required_string(payload.get("run_id"), "run_id")),
+                processed_at=processed_at,
+                processing_status=HistoryProcessingStatus(
+                    _required_string(
+                        payload.get("processing_status"),
+                        "processing_status",
+                    )
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            raise GmailHistoryMappingError("Invalid persisted Gmail History event") from exc
+
     def to_payload(self) -> dict[str, str | int | None]:
         """Return the stable JSON representation used by persistence."""
         return {

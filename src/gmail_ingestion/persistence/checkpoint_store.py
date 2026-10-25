@@ -53,6 +53,7 @@ class GmailCheckpointStore(Protocol):
         reason: str,
         *,
         invalidated_at: datetime | None = None,
+        expected_history_id: str | None = None,
     ) -> GmailCheckpoint: ...
 
 
@@ -125,12 +126,18 @@ class LocalCheckpointStore:
         reason: str,
         *,
         invalidated_at: datetime | None = None,
+        expected_history_id: str | None = None,
     ) -> GmailCheckpoint:
-        """Invalidate the current committed checkpoint without inventing a new history ID."""
+        """Invalidate the current committed checkpoint with optional CAS protection."""
         committed_path = self._checkpoint_dir(account_id) / "committed.json"
         committed = self._load_optional(committed_path)
         if committed is None:
             raise CheckpointNotFoundError(f"No committed checkpoint exists for {account_id}")
+        if expected_history_id is not None and committed.history_id != expected_history_id:
+            raise CheckpointConflictError(
+                "Committed checkpoint changed before invalidation: "
+                f"expected {expected_history_id!r}, got {committed.history_id!r}"
+            )
 
         invalid = committed.invalidate(reason, invalidated_at=invalidated_at)
         invalid_path = self._checkpoint_dir(account_id) / "invalid.json"
