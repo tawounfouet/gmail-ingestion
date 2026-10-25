@@ -116,6 +116,7 @@ class FullMessageSnapshot:
         after: date | None = None,
         before: date | None = None,
         last_days: int | None = None,
+        resolution_timestamp: datetime | None = None,
     ) -> FullSnapshotResult:
         """Run or resume a full Gmail snapshot through MIME/attachment analysis."""
         if not 1 <= max_results <= 500:
@@ -140,7 +141,9 @@ class FullMessageSnapshot:
             after=after,
             before=before,
             last_days=last_days,
-            resolution_timestamp=started_at if last_days is not None else None,
+            resolution_timestamp=(
+                resolution_timestamp or started_at if last_days is not None else None
+            ),
         )
         manifest_writer.validate_resume_settings(
             actual_run_id,
