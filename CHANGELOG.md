@@ -4,6 +4,33 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0a1 — 2026-10-25 — Checkpoint Foundation
+
+### Added
+
+- immutable `GmailCheckpoint` domain model;
+- explicit `CANDIDATE`, `COMMITTED` and `INVALID` checkpoint states;
+- independently versioned `checkpoint_schema_version = 1`;
+- `GmailCheckpointStore` / `CheckpointStore` persistence contract;
+- atomic local filesystem checkpoint persistence;
+- per-account checkpoint namespaces;
+- run-scoped candidate checkpoints;
+- explicit candidate promotion and discard operations;
+- committed-checkpoint invalidation with a retained invalid record;
+- regression tests proving candidate/committed separation and account isolation.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW hydration             = format=full
+0.3.0 filtered behavior   = unchanged
+```
+
+This alpha intentionally does not call `users.history.list`. Gmail History pagination and
+`messageAdded` begin in `0.4.0b1`.
+
 ## 0.3.0b1 — 2026-10-25 — Date Range / Filtered Sync
 
 ### Added
