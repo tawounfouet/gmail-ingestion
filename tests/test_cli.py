@@ -18,6 +18,7 @@ def test_cli_help_exposes_gmail_commands() -> None:
     assert "profile" in result.stdout
     assert "labels" in result.stdout
     assert "snapshot" in result.stdout
+    assert "range" in result.stdout
 
 
 def test_cli_version() -> None:
@@ -42,5 +43,23 @@ def test_snapshot_help_and_attachment_options_are_registered() -> None:
     parameter_names = {parameter.name for parameter in snapshot.params}
     assert "download_attachments" in parameter_names
     assert "max_attachment_bytes" in parameter_names
+    assert "query" in parameter_names
+    assert "label_ids" in parameter_names
+    assert "after" in parameter_names
+    assert "before" in parameter_names
+    assert "last_days" in parameter_names
+
+
+def test_range_help_and_date_options_are_registered() -> None:
+    result = runner.invoke(app, ["range", "--help"])
+    assert result.exit_code == 0
+    assert result.exception is None
+
+    command = get_command(app)
+    range_command = command.commands["range"]
+    parameter_names = {parameter.name for parameter in range_command.params}
+    assert "after" in parameter_names
+    assert "before" in parameter_names
+    assert "last_days" in parameter_names
     assert "query" in parameter_names
     assert "label_ids" in parameter_names
