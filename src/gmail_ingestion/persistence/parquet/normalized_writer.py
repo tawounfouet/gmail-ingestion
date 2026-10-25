@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -47,10 +47,7 @@ class NormalizedParquetWriter:
 
         for name in sorted(tables):
             contract = TABLE_CONTRACTS[name]
-            ordered = sorted(
-                rows[name],
-                key=lambda row, n=name: _sort_key(n, row),
-            )
+            ordered = sorted(rows[name], key=_table_sorter(name))
             schema = pa.schema(
                 [
                     pa.field(
@@ -114,6 +111,13 @@ class NormalizedParquetWriter:
             schema_path=schema_artifact.local_path,
             quality_path=quality_artifact.local_path,
         )
+
+
+def _table_sorter(name: str) -> Callable[[dict[str, Any]], tuple[str, ...]]:
+    def key(row: dict[str, Any]) -> tuple[str, ...]:
+        return _sort_key(name, row)
+
+    return key
 
 
 def _sort_key(name: str, row: Mapping[str, Any]) -> tuple[str, ...]:
