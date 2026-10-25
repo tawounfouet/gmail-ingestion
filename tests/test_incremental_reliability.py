@@ -527,6 +527,9 @@ def test_partial_snapshot_recovery_is_rejected_without_seeding_checkpoint(
             receipt_store=LocalHistoryReceiptStore(tmp_path / "control"),
             client_factory=forbidden_factory,
             snapshot_factory=snapshot_factory,
-        ).run(run_id=RUN_ID)
+        ).run(
+            run_id=RUN_ID,
+            snapshot_run_id=snapshot_runner.result.run_id,
+        )
 
     assert checkpoints.load_committed(ACCOUNT_ID) is None
