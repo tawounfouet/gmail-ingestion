@@ -42,3 +42,5 @@ def test_snapshot_help_and_attachment_options_are_registered() -> None:
     parameter_names = {parameter.name for parameter in snapshot.params}
     assert "download_attachments" in parameter_names
     assert "max_attachment_bytes" in parameter_names
+    assert "query" in parameter_names
+    assert "label_ids" in parameter_names
