@@ -12,15 +12,19 @@ The project follows Semantic Versioning with pre-release milestones during the p
 - pin PyIngestKit from moving `main` to stable `v2.1.0`;
 - add clean wheel/sdist build and SHA-256 release evidence;
 - record Python/PyIngestKit compatibility and no-migration promotion notes;
-- add a redacted real-mailbox qualification script.
+- add a redacted real-mailbox qualification script;
+- persist the exact Gmail `nextPageToken` for mid-discovery resume;
+- bound hydration futures instead of submitting the entire mailbox at once;
+- checkpoint discovery/fetch state in batches rather than after every hydrated message;
+- add a bounded live qualification sample mode for large mailboxes.
 
 ### Automated qualification
 
-The release branch is green on Python 3.11, 3.12 and 3.13. The exact stable branch candidate
-`800647747f8efeb48290e536f72cdc319f57e034` passed:
+The release branch is green on Python 3.11, 3.12 and 3.13. The large-mailbox hardened candidate
+`e3cf260813fc7cc0ff14bf2ad4897a40de784f40` passed:
 
 ```text
-37/37 tests
+40/40 tests
 Ruff
 mypy strict
 CLI smoke

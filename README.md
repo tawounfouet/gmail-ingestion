@@ -30,7 +30,7 @@ The stable candidate is automatically qualified:
 Python 3.11       PASS
 Python 3.12       PASS
 Python 3.13       PASS
-pytest            37/37 PASS
+pytest            40/40 PASS
 Ruff              PASS
 mypy strict       PASS
 wheel + sdist     PASS
@@ -62,8 +62,9 @@ source-shape validation is intentionally not treated as a substitute.
 ### Messages
 
 - paginated `users.messages.list`;
-- durable discovery queue;
-- bounded concurrency and retry;
+- durable discovery queue with persisted `nextPageToken`;
+- bounded in-flight hydration and retry;
+- batched fetch-state checkpoints for large mailboxes;
 - `users.messages.get(format="full")`;
 - immutable RAW;
 - resumable execution.
@@ -185,13 +186,9 @@ Do not commit `credentials.json`, local token files, mailbox RAW or qualificatio
 
 ## Distribution candidate
 
-```text
-gmail_ingestion-0.1.0-py3-none-any.whl
-SHA-256 da9cc008d257274b4ea1c6188121aa75acb1939e92697555b28fcee82d5a3bc1
-
-gmail_ingestion-0.1.0.tar.gz
-SHA-256 a77c708076ffe02f3989edd65399c7dcfc327eb0cf88868991d7f1b02605251f
-```
+The hardened stable candidate builds and installs cleanly. Candidate SHA-256 values are recorded in
+`docs/releases/v0.1.0-evidence.md`; final release hashes will be regenerated from the exact
+post-merge/tag SHA.
 
 ## Quality and packaging
 
