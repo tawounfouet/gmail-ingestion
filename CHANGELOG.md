@@ -4,6 +4,92 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0b2 — 2026-10-25 — Deletions + Label Mutations
+
+### Added
+
+- full mapping of Gmail `messagesDeleted[]`, `labelsAdded[]` and `labelsRemoved[]`;
+- one elementary normalized event per message change or per message-label change;
+- explicit `PENDING → PROCESSED` History event lifecycle;
+- pure `sync/event_reducer.py` reducer;
+- append-style message tombstone artifacts;
+- explicit `UPSERT_ACTIVE` and `DEACTIVATE` message-label mutation artifacts;
+- all four Gmail History types requested during incremental synchronization;
+- exact duplicate event-ID suppression within one run;
+- reducer metrics in the incremental manifest;
+- regression tests for mixed additions/deletions/label changes and duplicates.
+
+### Reducer contract
+
+```text
+MESSAGE_ADDED   → fetch + persist full message
+MESSAGE_DELETED → message tombstone
+LABEL_ADDED     → UPSERT_ACTIVE message-label mutation
+LABEL_REMOVED   → DEACTIVATE message-label mutation
+```
+
+The generic Gmail `history.messages[]` collection remains ignored to avoid double-counting
+changes already represented by the specific change-type fields.
+
+### Transaction rule
+
+```text
+persist PENDING event
+→ persist reducer effect
+→ mark event PROCESSED
+→ after every page/effect succeeds, create CANDIDATE
+→ COMMIT
+```
+
+A reducer or hydration failure therefore leaves the previous committed checkpoint authoritative.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+checkpoint_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW message hydration     = format=full
+0.3.0 filtered behavior   = unchanged
+PyIngestKit               = 2.1.0
+```
+
+### Automated qualification
+
+```text
+commit              9448e3ea94e9d473ab3d4539722bcd6dce4fefe2
+GitHub Actions      40195421766
+Python 3.11         PASS
+Python 3.12         PASS
+Python 3.13         PASS
+Ruff                PASS
+mypy strict         PASS — 67 source files
+pytest              PASS — 90/90
+CLI smoke           PASS
+wheel + sdist       PASS
+twine check         PASS
+clean wheel install PASS
+```
+
+Candidate distributions:
+
+```text
+gmail_ingestion-0.4.0b2-py3-none-any.whl
+sha256: d281cae48abbb15d40d1769b58c02f384dfddccde294adc9ee4c88cc1ae7819e
+
+gmail_ingestion-0.4.0b2.tar.gz
+sha256: 0539b22cd6fe58c2ee0ac2926db2b73ae9a281b4f947be3f4cee1444b09cf125
+```
+
+### Deferred to 0.4.0rc1
+
+- restart of the same partially written run;
+- crash at page boundaries;
+- crash after effect persistence but before processed marking;
+- durable replay across separate runs;
+- automatic Full Snapshot recovery after an expired History cursor;
+- final incremental reliability qualification.
+
 ## 0.4.0b1 — 2026-10-25 — Gmail History Incremental
 
 ### Added

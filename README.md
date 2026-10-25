@@ -3,7 +3,7 @@
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
 > **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
-> **Current development target:** `v0.4.0b1 — Gmail History Incremental`
+> **Current development target:** `v0.4.0b2 — Deletions + Label Mutations`
 
 `0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
 label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
@@ -261,10 +261,65 @@ Scope of `0.4.0b1`:
 
 ```text
 MESSAGE_ADDED       supported
-MESSAGE_DELETED     reserved for 0.4.0b2
-LABEL_ADDED         reserved for 0.4.0b2
-LABEL_REMOVED       reserved for 0.4.0b2
+MESSAGE_DELETED     supported in 0.4.0b2
+LABEL_ADDED         supported in 0.4.0b2
+LABEL_REMOVED       supported in 0.4.0b2
 ```
+
+## Deletions + label mutations — 0.4.0b2
+
+The second beta expands Gmail History from additions-only processing to the four specific change
+types exposed by Gmail:
+
+```text
+messageAdded
+messageDeleted
+labelAdded
+labelRemoved
+```
+
+The connector deliberately uses the specific change arrays rather than the generic
+`history.messages[]` field, which Gmail may duplicate.
+
+Reducer flow:
+
+```text
+History Record
+    ↓
+elementary GmailHistoryEvent
+    ↓
+PENDING persisted event
+    ↓
+EventReducer
+    ├── MESSAGE_ADDED   → messages.get(format=full)
+    ├── MESSAGE_DELETED → message tombstone
+    ├── LABEL_ADDED     → UPSERT_ACTIVE relation mutation
+    └── LABEL_REMOVED   → DEACTIVATE relation mutation
+    ↓
+effect persisted
+    ↓
+PROCESSED event
+    ↓
+candidate checkpoint
+    ↓
+commit
+```
+
+Incremental mutation artifacts stay separate from the frozen normalized schema v1:
+
+```text
+gmail.history/<run_id>/
+├── raw/
+├── history_events/
+├── message_tombstones/
+├── message_label_mutations/
+└── incremental_manifest.json
+```
+
+A tombstone records the deleted message ID, deletion history ID, source event and run. A label
+mutation records the logical relation operation without rewriting the immutable snapshot dataset.
+
+Exact duplicate event IDs observed again within the same incremental run are reduced only once.
 
 ## Normalize with the library
 
@@ -307,6 +362,9 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.4.0b2.md`
+- `docs/releases/v0.4.0b2-qualification.md`
+- `docs/runbooks/INCREMENTAL_MUTATIONS.md`
 - `docs/releases/v0.4.0b1.md`
 - `docs/releases/v0.4.0b1-qualification.md`
 - `docs/runbooks/INCREMENTAL_HISTORY_SYNC.md`
@@ -335,8 +393,8 @@ python -m twine check dist/*
 0.3.0      Filtered Ingestion Stable             ✅ stable
 0.4.0a1    Checkpoint Foundation                  ✅ qualified
 0.4.0b1    Gmail History Incremental               ✅ qualified
-0.4.0b2    Deletions + Label Mutations             ← next
-0.4.0rc1   Incremental Reliability                 planned
+0.4.0b2    Deletions + Label Mutations             ✅ qualified
+0.4.0rc1   Incremental Reliability                 ← next
 0.4.0      Incremental Sync Stable                 planned
 ```
 
