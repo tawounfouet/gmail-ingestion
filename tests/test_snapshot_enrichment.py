@@ -15,6 +15,7 @@ from gmail_ingestion.api import GmailApiError
 from gmail_ingestion.application import FullMessageSnapshot
 from gmail_ingestion.auth.store import LocalCredentialStore
 from gmail_ingestion.domain import GmailAccount
+from gmail_ingestion.persistence import RawMessageWriter
 
 
 def _b64(data: bytes) -> str:
@@ -271,3 +272,40 @@ def test_resume_rejects_changed_attachment_settings(tmp_path: Path) -> None:
             client_factory=_factory(_Backend()),
             retry_sleep=lambda _: None,
         ).run(run_id=run_id, download_attachments=True)
+
+
+def test_resume_reuses_existing_mime_analysis_without_rereading_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _Provider(tmp_path / "credentials")
+    store = LocalArtifactStore(tmp_path / "artifacts")
+    run_id = UUID("00000000-0000-0000-0000-000000000404")
+    first_backend = _Backend()
+
+    first = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(first_backend),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id)
+
+    assert first.manifest_status == "COMPLETED"
+
+    def forbidden_read(self: RawMessageWriter, run_id: UUID, message_id: str) -> Mapping[str, Any]:
+        raise AssertionError("Persisted RAW must not be reread when MIME analysis already exists")
+
+    monkeypatch.setattr(RawMessageWriter, "read", forbidden_read)
+
+    resumed = FullMessageSnapshot(
+        provider,
+        store,
+        client_factory=_factory(_Backend()),
+        retry_sleep=lambda _: None,
+    ).run(run_id=run_id)
+
+    assert resumed.resumed is True
+    assert resumed.manifest_status == "COMPLETED"
+    assert resumed.mime_messages_processed == 1
+    assert resumed.mime_parts == 3
+    assert resumed.attachments_detected == 1

@@ -12,7 +12,7 @@ from typing import Any
 from gmail_ingestion.domain import AttachmentCandidate
 
 from .address_parser import ParsedAddress, parse_addresses
-from .header_parser import ParsedHeaders, parse_headers
+from .header_parser import ParsedHeaders, parse_headers_tolerant
 
 
 class MimeParseError(ValueError):
@@ -69,7 +69,9 @@ def analyze_message(message: Mapping[str, Any]) -> MimeAnalysis:
     if not isinstance(payload, Mapping):
         raise MimeParseError("Gmail message payload must be an object")
 
-    root_headers = parse_headers(payload.get("headers"))
+    warnings: list[str] = []
+    root_headers, root_header_warnings = parse_headers_tolerant(payload.get("headers"))
+    warnings.extend(f"root: {warning}" for warning in root_header_warnings)
     addresses = {
         role: parse_addresses(root_headers.values(header_name))
         for role, header_name in (
@@ -85,7 +87,6 @@ def analyze_message(message: Mapping[str, Any]) -> MimeAnalysis:
     attachments: list[AttachmentCandidate] = []
     text_bodies: list[str] = []
     html_bodies: list[str] = []
-    warnings: list[str] = []
 
     _walk_part(
         payload,
@@ -135,7 +136,8 @@ def _walk_part(
     html_bodies: list[str],
     warnings: list[str],
 ) -> None:
-    headers = parse_headers(raw_part.get("headers"))
+    headers, header_warnings = parse_headers_tolerant(raw_part.get("headers"))
+    warnings.extend(f"{path}: {warning}" for warning in header_warnings)
     part_id = _string(raw_part.get("partId"))
     mime_type = _string(raw_part.get("mimeType")).lower() or "application/octet-stream"
     filename = _string(raw_part.get("filename"))

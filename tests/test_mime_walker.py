@@ -103,3 +103,26 @@ def test_message_without_payload_is_valid_but_has_warning() -> None:
     assert analysis.text_body is None
     assert analysis.html_body is None
     assert analysis.warnings
+
+
+def test_malformed_individual_headers_are_ignored_with_warning() -> None:
+    message = {
+        "id": "m-bad-header",
+        "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "headers": [
+                {"value": "orphaned"},
+                {"name": "Subject", "value": "Still usable"},
+                {"name": "X-Bad"},
+            ],
+            "body": {"size": 5, "data": _b64(b"hello")},
+        },
+    }
+
+    analysis = analyze_message(message)
+
+    assert analysis.headers.first("subject") == "Still usable"
+    assert analysis.text_body == "hello"
+    assert any("missing name" in warning for warning in analysis.warnings)
+    assert any("missing string value" in warning for warning in analysis.warnings)

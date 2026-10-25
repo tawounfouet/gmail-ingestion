@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+from typing import Any, cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
 from pyingestkit.artifacts.naming import safe_component
+from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion.domain import AttachmentRecord
 from gmail_ingestion.normalization import MimeAnalysis
@@ -19,6 +23,34 @@ class MessageAnalysisWriter:
     def __init__(self, store: ArtifactStore, *, job_id: str = _JOB_ID) -> None:
         self.store = store
         self.job_id = job_id
+
+    def read_existing(
+        self,
+        run_id: UUID,
+        account_id: str,
+        message_id: str,
+    ) -> Mapping[str, Any] | None:
+        """Read an existing deterministic MIME analysis for safe resume."""
+        relative_path = f"candidate/mime/{safe_component(message_id)}.json"
+        try:
+            raw = self.store.read_bytes(self.store.uri_for(self.job_id, run_id, relative_path))
+        except StorageError:
+            return None
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"MIME analysis for Gmail message {message_id!r} is not valid JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"MIME analysis for Gmail message {message_id!r} must be a JSON object"
+            )
+        if payload.get("account_id") != account_id or payload.get("message_id") != message_id:
+            raise ValueError(
+                f"MIME analysis for Gmail message {message_id!r} has inconsistent identity"
+            )
+        return cast(Mapping[str, Any], payload)
 
     def write(
         self,

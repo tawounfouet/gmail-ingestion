@@ -95,6 +95,20 @@ class MessagePostProcessor:
         for message_id, discovery in records.items():
             if discovery.fetch_status is not MessageFetchStatus.FETCHED:
                 continue
+
+            existing = self.analysis_writer.read_existing(run_id, account_id, message_id)
+            if existing is not None and _existing_analysis_is_reusable(existing):
+                summary = _summarize_existing_analysis(existing, message_id)
+                mime_messages_processed += 1
+                mime_parts += summary["mime_parts"]
+                attachments_detected += summary["attachments_detected"]
+                attachments_fetched += summary["attachments_fetched"]
+                attachments_failed += summary["attachments_failed"]
+                attachments_skipped += summary["attachments_skipped"]
+                bytes_downloaded += summary["bytes_downloaded"]
+                warnings.extend(summary["warnings"])
+                continue
+
             try:
                 message = self.raw_messages.read(run_id, message_id)
                 analysis = analyze_message(message)
@@ -357,3 +371,70 @@ def _record(
         error_code=error_code,
         error_message=error_message,
     )
+
+
+def _existing_analysis_is_reusable(payload: Mapping[str, Any]) -> bool:
+    """Reuse completed candidate analysis, but retry prior failed attachment effects."""
+    attachments = payload.get("attachments", [])
+    if not isinstance(attachments, list):
+        return False
+    for attachment in attachments:
+        if not isinstance(attachment, Mapping):
+            return False
+        if attachment.get("download_status") == AttachmentDownloadStatus.FAILED.value:
+            return False
+    return True
+
+
+def _summarize_existing_analysis(
+    payload: Mapping[str, Any],
+    message_id: str,
+) -> dict[str, Any]:
+    parts = payload.get("mime_parts", [])
+    attachments = payload.get("attachments", [])
+    raw_warnings = payload.get("warnings", [])
+    if not isinstance(parts, list) or not isinstance(attachments, list):
+        raise ValueError(f"Existing MIME analysis for {message_id!r} has invalid collections")
+
+    fetched = 0
+    failed = 0
+    skipped = 0
+    bytes_downloaded = 0
+    for attachment in attachments:
+        if not isinstance(attachment, Mapping):
+            raise ValueError(
+                f"Existing MIME analysis for {message_id!r} has invalid attachment entry"
+            )
+        status = attachment.get("download_status")
+        if status == AttachmentDownloadStatus.DOWNLOADED.value:
+            fetched += 1
+            size = attachment.get("size_bytes", 0)
+            if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+                bytes_downloaded += size
+        elif status == AttachmentDownloadStatus.FAILED.value:
+            failed += 1
+        elif status == AttachmentDownloadStatus.SKIPPED_SIZE_LIMIT.value:
+            skipped += 1
+
+    warnings: list[ManifestIssue] = []
+    if isinstance(raw_warnings, list):
+        for warning in raw_warnings:
+            if isinstance(warning, str):
+                warnings.append(
+                    ManifestIssue(
+                        scope="mime",
+                        code="MIME_WARNING",
+                        message=warning,
+                        message_id=message_id,
+                    )
+                )
+
+    return {
+        "mime_parts": len(parts),
+        "attachments_detected": len(attachments),
+        "attachments_fetched": fetched,
+        "attachments_failed": failed,
+        "attachments_skipped": skipped,
+        "bytes_downloaded": bytes_downloaded,
+        "warnings": tuple(warnings),
+    }
