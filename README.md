@@ -3,7 +3,7 @@
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
 > **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
-> **Current development target:** `v0.4.0a1 — Checkpoint Foundation`
+> **Current development target:** `v0.4.0b1 — Gmail History Incremental`
 
 `0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
 label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
@@ -214,6 +214,58 @@ checkpoint_schema_version = 1
 `0.4.0a1` deliberately does **not** introduce Gmail History API calls, event reduction,
 tombstones or label mutations. Those begin in `0.4.0b1` and `0.4.0b2`.
 
+## Gmail History incremental — 0.4.0b1
+
+The beta connects the persistent committed checkpoint to Gmail History while preserving the frozen
+snapshot and normalized-data contracts.
+
+```text
+COMMITTED H100
+    ↓
+users.history.list(startHistoryId=H100, historyTypes=messageAdded)
+    ↓
+paged History records
+    ↓
+RAW history pages
+    ↓
+MESSAGE_ADDED events
+    ↓
+messages.get(format=full)
+    ↓
+immutable RAW messages
+    ↓
+candidate H125
+    ↓
+commit H125
+```
+
+The input cursor remains the same `H100` across every Gmail History page; pagination is carried by
+`pageToken`. The response `historyId` from the final page becomes the output candidate.
+
+CLI:
+
+```bash
+gmail-ingest incremental \
+  --checkpoint-root .gmail-ingestion-control \
+  --artifact-root .gmail-ingestion
+```
+
+A committed checkpoint must already exist. The beta deliberately does not invent or silently seed
+one from the current Gmail profile.
+
+If Gmail rejects `startHistoryId` as invalid or expired, the connector invalidates the committed
+checkpoint and raises a typed `FullResyncRequiredError`. Automatic full-snapshot recovery is a
+later reliability gate.
+
+Scope of `0.4.0b1`:
+
+```text
+MESSAGE_ADDED       supported
+MESSAGE_DELETED     reserved for 0.4.0b2
+LABEL_ADDED         reserved for 0.4.0b2
+LABEL_REMOVED       reserved for 0.4.0b2
+```
+
 ## Normalize with the library
 
 ```python
@@ -255,6 +307,8 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.4.0b1.md`
+- `docs/runbooks/INCREMENTAL_HISTORY_SYNC.md`
 - `docs/releases/v0.4.0a1.md`
 - `docs/runbooks/CHECKPOINT_FOUNDATION.md`
 - `docs/releases/v0.3.0.md`
@@ -278,8 +332,8 @@ python -m twine check dist/*
 0.3.0a1    Search Filters                        ✅ qualified slice
 0.3.0b1    Date Range / Filtered Sync            ✅ qualified
 0.3.0      Filtered Ingestion Stable             ✅ stable
-0.4.0a1    Checkpoint Foundation                  ← current
-0.4.0b1    Gmail History Incremental               next
+0.4.0a1    Checkpoint Foundation                  ✅ qualified
+0.4.0b1    Gmail History Incremental               ← current
 0.4.0b2    Deletions + Label Mutations             planned
 0.4.0rc1   Incremental Reliability                 planned
 0.4.0      Incremental Sync Stable                 planned

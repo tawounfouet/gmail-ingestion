@@ -4,6 +4,57 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0b1 — 2026-10-25 — Gmail History Incremental
+
+### Added
+
+- `GmailHistoryApi` adapter for `users.history.list`;
+- explicit `startHistoryId`, `pageToken`, `maxResults` and `historyTypes` handling;
+- typed `GmailHistoryExpiredError` for Gmail HTTP 404 cursor expiry;
+- `GmailHistoryEvent` and deterministic elementary event IDs;
+- `MESSAGE_ADDED` mapping from `messagesAdded[]`;
+- immutable RAW persistence for Gmail History pages;
+- normalized per-event JSON persistence;
+- full `messages.get(format=full)` hydration for affected messages;
+- `IncrementalHistorySync` application use case;
+- run-level incremental manifest with input/candidate/committed checkpoint evidence;
+- `gmail-ingest incremental` CLI;
+- typed `FullResyncRequiredError` after checkpoint invalidation;
+- multi-page, no-change, hydration-failure, missing-checkpoint and expired-history tests.
+
+### Transaction rule
+
+```text
+read COMMITTED
+→ fetch all History pages
+→ persist RAW history
+→ persist MESSAGE_ADDED events
+→ hydrate + persist changed messages
+→ save CANDIDATE
+→ COMMIT
+```
+
+Any failure before candidate promotion leaves the previous committed checkpoint authoritative.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+checkpoint_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW message hydration     = format=full
+0.3.0 filtered behavior   = unchanged
+```
+
+### Deferred to 0.4.0b2 / rc1
+
+- `MESSAGE_DELETED`;
+- `LABEL_ADDED`;
+- `LABEL_REMOVED`;
+- tombstone and message-label mutations;
+- automatic full-snapshot recovery after expired history;
+- duplicate/crash/page-boundary reliability qualification.
+
 ## 0.4.0a1 — 2026-10-25 — Checkpoint Foundation
 
 ### Added
