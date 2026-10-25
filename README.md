@@ -2,35 +2,34 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Release branch:** `release/v0.1.0 — Snapshot Foundation Stable`
+> **Current release target:** `v0.2.0 — Normalized Dataset Stable`
 
-The release branch freezes the qualified Snapshot Foundation without adding Gmail semantics.
+`0.2.0` preserves the qualified `0.1.0` Gmail snapshot path and adds the first stable
+analytical contract.
 
 ```text
-OAuth Desktop
-   ↓
-Profile
-   ↓
-Labels
-   ↓
-Full Message Snapshot
+Gmail API
    ↓
 Immutable RAW
    ↓
-MIME / Attachment Analysis
+Deterministic normalization
    ↓
-Manifest v1
+Typed relational tables
+   ↓
+Quality checks
+   ↓
+Parquet
 ```
 
 ## Release status
 
-The stable candidate is automatically qualified:
+The pre-promotion candidate is automatically qualified on:
 
 ```text
 Python 3.11       PASS
 Python 3.12       PASS
 Python 3.13       PASS
-pytest            43/43 PASS
+pytest            46/46 PASS
 Ruff              PASS
 mypy strict       PASS
 wheel + sdist     PASS
@@ -39,60 +38,40 @@ clean install     PASS
 PyIngestKit       v2.1.0 verified
 ```
 
-The stable candidate has passed the package's own real Gmail Desktop OAuth E2E, including a
-50-message bounded snapshot, MIME processing, resume, and a targeted 10-message
-`has:attachment` attachment-download qualification.
+The source-extraction layer remains the same qualified `gmail.readonly` Snapshot Foundation
+released in `0.1.0`. The `0.2.0` transformation path performs no Gmail API call.
 
-## Stable Snapshot Foundation
+## Stable normalized contract
 
-### OAuth + Profile
+```text
+normalized_schema_version = 1
+```
 
-- exact `gmail.readonly` scope;
-- private per-account local credentials;
-- transparent refresh;
-- mailbox identity verification.
+Tables:
 
-### Labels
+```text
+accounts
+labels
+messages
+threads
+message_headers
+message_recipients
+message_labels
+mime_parts
+attachments
+```
 
-- `users.labels.list`;
-- optional `users.labels.get` enrichment;
-- immutable RAW;
-- normalized labels Parquet candidate.
-
-### Messages
-
-- paginated `users.messages.list`;
-- durable discovery queue with persisted `nextPageToken`;
-- bounded in-flight hydration and retry;
-- batched fetch-state checkpoints for large mailboxes;
-- `users.messages.get(format="full")`;
-- immutable RAW;
-- resumable execution.
-
-### MIME + Attachments
-
-- recursive multipart traversal;
-- text/plain and text/html;
-- charset handling;
-- duplicate header preservation;
-- attachment and inline-resource detection;
-- metadata-only default;
-- optional binary download with SHA-256 and size limit;
-- separate binary storage;
-- bounded deterministic physical filenames for long Gmail attachment IDs.
-
-### Manifest
-
-Every snapshot records versioned run evidence, counts, H_START, errors, warnings and storage paths.
+Multi-valued Gmail data stays relational rather than being flattened into convenience arrays.
+Threads are materialized aggregates that remain derivable from messages.
 
 ## Requirements
 
 - Python 3.11, 3.12 or 3.13;
 - Git;
-- Google Cloud project with Gmail API enabled;
+- Google Cloud project with Gmail API enabled for source ingestion;
 - OAuth 2.0 Desktop client JSON as `credentials.json`.
 
-The release pins PyIngestKit to:
+PyIngestKit is pinned to:
 
 ```text
 v2.1.0
@@ -103,7 +82,7 @@ v2.1.0
 ```bash
 git clone https://github.com/tawounfouet/gmail-ingestion.git
 cd gmail-ingestion
-git checkout release/v0.1.0
+git checkout v0.2.0
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -114,27 +93,15 @@ gmail-ingest version
 Expected:
 
 ```text
-0.1.0
+0.2.0
 ```
 
-## Authorize
+## Source snapshot
 
 ```bash
 gmail-ingest auth
 gmail-ingest profile
-```
-
-## Labels
-
-```bash
 gmail-ingest labels
-```
-
-## Snapshot
-
-Safe metadata-only default:
-
-```bash
 gmail-ingest snapshot
 ```
 
@@ -146,50 +113,34 @@ gmail-ingest snapshot \
   --max-attachment-bytes 10485760
 ```
 
-Resume:
+## Normalize with the library
 
-```bash
-gmail-ingest snapshot \
-  --run-id <RUN_UUID> \
-  --download-attachments \
-  --max-attachment-bytes 10485760
+```python
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from pyingestkit.artifacts.filesystem import LocalArtifactStore
+
+from gmail_ingestion import __version__
+from gmail_ingestion.normalization import normalize_snapshot
+from gmail_ingestion.persistence import NormalizedParquetWriter
+
+normalized = normalize_snapshot(
+    account,
+    label_payloads,
+    message_payloads,
+    ingested_at=datetime.now(UTC),
+    dataset_version="run-example",
+    source_connector_version=__version__,
+)
+
+result = NormalizedParquetWriter(
+    LocalArtifactStore(".gmail-ingestion")
+).write(uuid4(), normalized.tables)
 ```
 
-## Stable live qualification
-
-Use a dedicated Gmail test mailbox:
-
-```bash
-gmail-ingest auth
-python scripts/qualify_live_snapshot_foundation.py \
-  --sample-size 50 \
-  --download-attachments \
-  --require-attachment \
-  --max-attachment-bytes 10485760
-```
-
-Required output:
-
-```text
-live_gate: PASS
-```
-
-The qualification script uses a bounded 50-message real Gmail sample by default, so very large
-mailboxes do not need to be fully downloaded. Use `--full-mailbox` only when explicitly desired.
-
-The script emits redacted evidence at:
-
-```text
-qualification/v0.1.0-live-evidence.json
-```
-
-Do not commit `credentials.json`, local token files, mailbox RAW or qualification artifact roots.
-
-## Distribution candidate
-
-The hardened stable candidate builds and installs cleanly. Candidate SHA-256 values are recorded in
-`docs/releases/v0.1.0-evidence.md`; final release hashes will be regenerated from the exact
-post-merge/tag SHA.
+The normalization API is deliberately pure with respect to Gmail: callers can replay preserved RAW
+payloads without re-contacting the source.
 
 ## Quality and packaging
 
@@ -203,23 +154,22 @@ python -m twine check dist/*
 
 ## Release documentation
 
-- `docs/releases/v0.1.0-qualification.md`
-- `docs/releases/v0.1.0-evidence.md`
-- `docs/releases/v0.1.0.md`
-- `docs/releases/COMPATIBILITY-v0.1.0.md`
-- `docs/releases/MIGRATION-v0.1.0.md`
+- `docs/releases/v0.2.0.md`
+- `docs/releases/v0.2.0-qualification.md`
+- `docs/releases/COMPATIBILITY-v0.2.0.md`
+- `docs/releases/MIGRATION-v0.2.0.md`
+- `docs/runbooks/NORMALIZED_DATASET.md`
 
 ## Roadmap
 
 ```text
 0.0.1      Repository Bootstrap                 ✅
-0.1.0a1    OAuth + Profile                      ✅
-0.1.0a2    Labels                               ✅
-0.1.0b1    Full Message Snapshot                ✅
-0.1.0b2    MIME + Attachments + Manifest        ✅
-0.1.0rc1   Snapshot Qualification               ✅ automated qualified
-0.1.0      Snapshot Foundation Stable           ✅ qualified for publication
-0.2.0      Normalized Dataset                   next
+0.1.0      Snapshot Foundation Stable           ✅
+0.2.0a1    Normalized Data Model                ✅
+0.2.0b1    Threads + Relations                  ✅
+0.2.0rc1   Normalization Qualification          ✅
+0.2.0      Normalized Dataset Stable            candidate
+0.3.0      Search / Date Range / Filtered       next
 ```
 
 ## License

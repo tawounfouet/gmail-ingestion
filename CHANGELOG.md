@@ -4,6 +4,49 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.2.0 — 2026-10-25 — Normalized Dataset Stable
+
+### Added
+
+- normalized schema contract v1 for `accounts`, `labels`, `messages`, `threads`,
+  `message_headers`, `message_recipients`, `message_labels`, `mime_parts` and
+  `attachments`;
+- deterministic RAW-to-normalized transformation with no Gmail API calls in the normalization path;
+- explicit grains, logical primary keys and stable typed fields;
+- canonical multi-valued relations for headers, recipients and labels;
+- thread aggregation derived entirely from normalized messages;
+- stable Parquet candidate persistence with deterministic table ordering;
+- schema-v1 and quality evidence artifacts;
+- logical key, required-field, referential-integrity and attachment-quality checks;
+- RAW fixture → normalize → Parquet → reload → logical equality qualification.
+
+### Stable contract
+
+```text
+normalized_schema_version = 1
+```
+
+The stable milestone combines the planned `0.2.0a1` data model, `0.2.0b1` threads/relations,
+and `0.2.0rc1` normalization qualification without changing the Gmail source-extraction semantics
+already frozen in `0.1.0`.
+
+### Automated qualification
+
+The pre-promotion candidate passed on Python 3.11, 3.12 and 3.13:
+
+```text
+46/46 tests
+Ruff
+mypy strict
+CLI smoke
+wheel + sdist build
+twine check
+clean wheel install
+PyIngestKit 2.1.0 verification
+normalized_schema_version = 1
+deterministic Parquet round-trip
+```
+
 ## 0.1.0 — 2026-10-25 — Snapshot Foundation Stable
 
 ### Changed
@@ -44,8 +87,6 @@ The package's own real Gmail Desktop OAuth E2E passed on 2026-10-25. The bounded
 processed 50 real messages, resumed the same run without count drift, and separately processed
 10 `has:attachment` messages with 10 successful attachment downloads and zero attachment failures.
 
-The stable release is approved for merge and publication after post-merge CI.
-
 ## 0.1.0rc1 — Snapshot Qualification
 
 ### Added
@@ -60,11 +101,6 @@ The stable release is approved for merge and publication after post-merge CI.
 - 1,001-message / three-page large-mailbox sample;
 - secret-leak assertions across generated run artifacts;
 - dedicated RC1 real-mailbox qualification runbook.
-
-### Qualification status
-
-Automated CI qualification is green on Python 3.11, 3.12 and 3.13: 36/36 tests pass and mypy strict
-reports no issues across 46 source files.
 
 ## 0.1.0b2 — MIME + Attachments + Manifest
 
