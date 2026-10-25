@@ -19,6 +19,7 @@ def test_cli_help_exposes_gmail_commands() -> None:
     assert "labels" in result.stdout
     assert "snapshot" in result.stdout
     assert "range" in result.stdout
+    assert "incremental" in result.stdout
 
 
 def test_cli_version() -> None:
@@ -63,3 +64,17 @@ def test_range_help_and_date_options_are_registered() -> None:
     assert "last_days" in parameter_names
     assert "query" in parameter_names
     assert "label_ids" in parameter_names
+
+
+def test_incremental_help_and_checkpoint_options_are_registered() -> None:
+    result = runner.invoke(app, ["incremental", "--help"])
+    assert result.exit_code == 0
+    assert result.exception is None
+
+    command = get_command(app)
+    incremental = command.commands["incremental"]
+    parameter_names = {parameter.name for parameter in incremental.params}
+    assert "checkpoint_root" in parameter_names
+    assert "artifact_root" in parameter_names
+    assert "max_results" in parameter_names
+    assert "auto_full_resync" in parameter_names

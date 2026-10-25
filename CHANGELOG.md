@@ -4,6 +4,311 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0 — 2026-10-25 — Incremental Sync Stable
+
+### Stable capability
+
+- committed per-account Gmail History checkpoints with explicit candidate/commit/invalidate states;
+- incremental `users.history.list` processing for message additions, deletions and label mutations;
+- deterministic event IDs and append-style mutation/tombstone artifacts;
+- durable account-scoped receipts for cross-run idempotence;
+- same-run replay of frozen History pages and persisted effects;
+- compare-and-swap checkpoint promotion/invalidation;
+- automatic `Full Snapshot → bootstrap checkpoint → History catch-up` recovery;
+- resumable full-mailbox qualification snapshots and resumable post-bootstrap catch-up;
+- graceful handling of malformed individual Gmail MIME headers as warnings;
+- graceful handling of History `MESSAGE_ADDED` events whose message is already permanently deleted
+  when hydration occurs.
+
+### Stable contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Real Gmail qualification
+
+The external Gmail OAuth/API-client gate passed on 2026-10-25 from candidate
+`8b9a0693a06a922bda8ec728fecee8b2b90e5c8f`.
+
+```text
+MESSAGE_ADDED      5
+MESSAGE_DELETED    4
+LABEL_ADDED        4
+LABEL_REMOVED      5
+
+checkpoint advancement                       PASS
+all events processed                         PASS
+same-run recovery                            PASS
+cross-run durable receipt replay             PASS
+cross-run message rehydration                0
+OAuth secrets absent from artifacts/control  PASS
+```
+
+The live-qualified code candidate also passed CI #117 with Python 3.11/3.12/3.13, Ruff, mypy
+strict, 105/105 tests, CLI smoke and package validation.
+
+See `docs/releases/v0.4.0-evidence.md`.
+
+## 0.4.0rc1 — 2026-10-25 — Incremental Reliability
+
+### Added
+
+- deterministic same-run replay of immutable Gmail History RAW pages;
+- persisted History-event rehydration for crash recovery;
+- durable account-scoped History event receipts for cross-run idempotence;
+- independently versioned `history_receipt_schema_version = 1`;
+- reuse of already persisted full-message RAW during event replay;
+- `RUNNING`, `READY_TO_COMMIT`, `COMPLETED` and `RECOVERED_COMMIT` transaction evidence;
+- candidate recovery without re-contacting Gmail;
+- recovery when commit succeeded but final manifest persistence did not;
+- compare-and-swap protection on checkpoint promotion and invalidation;
+- automatic `Full Snapshot → bootstrap checkpoint → History catch-up` recovery;
+- explicit rejection of PARTIAL snapshot recovery baselines;
+- `--auto-full-resync/--no-auto-full-resync` CLI policy switch;
+- crash/replay/CAS/recovery qualification scenarios.
+
+### Recovery invariants
+
+```text
+frozen History page exists
+→ reuse it, do not call Gmail for that page again
+
+event already PROCESSED
+→ do not repeat its effect
+
+durable receipt already exists
+→ mark replay event PROCESSED without repeating its effect
+
+message RAW already exists
+→ reuse it, do not hydrate again
+
+candidate exists for same run
+→ CAS-promote it without refetching Gmail History
+
+committed checkpoint belongs to same run
+→ recover final run state without refetching Gmail History
+
+snapshot status != COMPLETED
+→ never seed a new checkpoint
+
+stale predecessor checkpoint
+→ reject promotion/invalidation
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Automated qualification
+
+```text
+candidate commit       f6eaba9ca52682163978e87db77fec20c277621b
+GitHub Actions         40198698842
+Python 3.11            PASS
+Python 3.12            PASS
+Python 3.13            PASS
+Ruff                   PASS
+mypy strict            PASS — 69 source files
+pytest                 PASS — 99/99
+CLI smoke              PASS
+wheel + sdist          PASS
+twine check            PASS
+clean wheel install    PASS
+```
+
+Candidate distributions:
+
+```text
+gmail_ingestion-0.4.0rc1-py3-none-any.whl
+sha256: 6f375ddb27b7359f39f2a9919a2382bfb71c9f88fa68544c9cb7f1d9f36f4795
+
+gmail_ingestion-0.4.0rc1.tar.gz
+sha256: c1e6467f4e65a0ca6e2f926b5fd638f821413e533ec4d534f85d89213f89d6b3
+```
+
+### Stable promotion gate
+
+The rc1 evidence above is automated. It does **not** claim that the recovery path has already been
+executed against a real Gmail mailbox. Stable `0.4.0` should perform a bounded live-mailbox
+qualification before release.
+
+## 0.4.0b2 — 2026-10-25 — Deletions + Label Mutations
+
+### Added
+
+- full mapping of Gmail `messagesDeleted[]`, `labelsAdded[]` and `labelsRemoved[]`;
+- one elementary normalized event per message change or per message-label change;
+- explicit `PENDING → PROCESSED` History event lifecycle;
+- pure `sync/event_reducer.py` reducer;
+- append-style message tombstone artifacts;
+- explicit `UPSERT_ACTIVE` and `DEACTIVATE` message-label mutation artifacts;
+- all four Gmail History types requested during incremental synchronization;
+- exact duplicate event-ID suppression within one run;
+- reducer metrics in the incremental manifest;
+- regression tests for mixed additions/deletions/label changes and duplicates.
+
+### Reducer contract
+
+```text
+MESSAGE_ADDED   → fetch + persist full message
+MESSAGE_DELETED → message tombstone
+LABEL_ADDED     → UPSERT_ACTIVE message-label mutation
+LABEL_REMOVED   → DEACTIVATE message-label mutation
+```
+
+The generic Gmail `history.messages[]` collection remains ignored to avoid double-counting
+changes already represented by the specific change-type fields.
+
+### Transaction rule
+
+```text
+persist PENDING event
+→ persist reducer effect
+→ mark event PROCESSED
+→ after every page/effect succeeds, create CANDIDATE
+→ COMMIT
+```
+
+A reducer or hydration failure therefore leaves the previous committed checkpoint authoritative.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+checkpoint_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW message hydration     = format=full
+0.3.0 filtered behavior   = unchanged
+PyIngestKit               = 2.1.0
+```
+
+### Automated qualification
+
+```text
+commit              9448e3ea94e9d473ab3d4539722bcd6dce4fefe2
+GitHub Actions      40195421766
+Python 3.11         PASS
+Python 3.12         PASS
+Python 3.13         PASS
+Ruff                PASS
+mypy strict         PASS — 67 source files
+pytest              PASS — 90/90
+CLI smoke           PASS
+wheel + sdist       PASS
+twine check         PASS
+clean wheel install PASS
+```
+
+Candidate distributions:
+
+```text
+gmail_ingestion-0.4.0b2-py3-none-any.whl
+sha256: d281cae48abbb15d40d1769b58c02f384dfddccde294adc9ee4c88cc1ae7819e
+
+gmail_ingestion-0.4.0b2.tar.gz
+sha256: 0539b22cd6fe58c2ee0ac2926db2b73ae9a281b4f947be3f4cee1444b09cf125
+```
+
+### Deferred to 0.4.0rc1
+
+- restart of the same partially written run;
+- crash at page boundaries;
+- crash after effect persistence but before processed marking;
+- durable replay across separate runs;
+- automatic Full Snapshot recovery after an expired History cursor;
+- final incremental reliability qualification.
+
+## 0.4.0b1 — 2026-10-25 — Gmail History Incremental
+
+### Added
+
+- `GmailHistoryApi` adapter for `users.history.list`;
+- explicit `startHistoryId`, `pageToken`, `maxResults` and `historyTypes` handling;
+- typed `GmailHistoryExpiredError` for Gmail HTTP 404 cursor expiry;
+- `GmailHistoryEvent` and deterministic elementary event IDs;
+- `MESSAGE_ADDED` mapping from `messagesAdded[]`;
+- immutable RAW persistence for Gmail History pages;
+- normalized per-event JSON persistence;
+- full `messages.get(format=full)` hydration for affected messages;
+- `IncrementalHistorySync` application use case;
+- run-level incremental manifest with input/candidate/committed checkpoint evidence;
+- `gmail-ingest incremental` CLI;
+- typed `FullResyncRequiredError` after checkpoint invalidation;
+- multi-page, no-change, hydration-failure, missing-checkpoint and expired-history tests.
+
+### Transaction rule
+
+```text
+read COMMITTED
+→ fetch all History pages
+→ persist RAW history
+→ persist MESSAGE_ADDED events
+→ hydrate + persist changed messages
+→ save CANDIDATE
+→ COMMIT
+```
+
+Any failure before candidate promotion leaves the previous committed checkpoint authoritative.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+checkpoint_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW message hydration     = format=full
+0.3.0 filtered behavior   = unchanged
+```
+
+### Deferred to 0.4.0b2 / rc1
+
+- `MESSAGE_DELETED`;
+- `LABEL_ADDED`;
+- `LABEL_REMOVED`;
+- tombstone and message-label mutations;
+- automatic full-snapshot recovery after expired history;
+- duplicate/crash/page-boundary reliability qualification.
+
+## 0.4.0a1 — 2026-10-25 — Checkpoint Foundation
+
+### Added
+
+- immutable `GmailCheckpoint` domain model;
+- explicit `CANDIDATE`, `COMMITTED` and `INVALID` checkpoint states;
+- independently versioned `checkpoint_schema_version = 1`;
+- `GmailCheckpointStore` / `CheckpointStore` persistence contract;
+- atomic local filesystem checkpoint persistence;
+- per-account checkpoint namespaces;
+- run-scoped candidate checkpoints;
+- explicit candidate promotion and discard operations;
+- committed-checkpoint invalidation with a retained invalid record;
+- regression tests proving candidate/committed separation and account isolation.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+OAuth scope               = gmail.readonly
+RAW hydration             = format=full
+0.3.0 filtered behavior   = unchanged
+```
+
+This alpha intentionally does not call `users.history.list`. Gmail History pagination and
+`messageAdded` begin in `0.4.0b1`.
+
 ## 0.3.0b1 — 2026-10-25 — Date Range / Filtered Sync
 
 ### Added

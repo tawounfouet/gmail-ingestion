@@ -2,7 +2,8 @@
 
 from .attachments import GmailAttachmentsApi
 from .client import GmailApiClient
-from .client_error import GmailApiError
+from .client_error import GmailApiError, GmailMessageNotFoundError
+from .history import GmailHistoryApi, GmailHistoryExpiredError
 from .labels import GmailLabelsApi
 from .messages import GmailMessagesApi
 from .profile import GmailProfileError, map_gmail_profile
@@ -10,7 +11,10 @@ from .profile import GmailProfileError, map_gmail_profile
 __all__ = [
     "GmailApiClient",
     "GmailApiError",
+    "GmailMessageNotFoundError",
     "GmailAttachmentsApi",
+    "GmailHistoryApi",
+    "GmailHistoryExpiredError",
     "GmailLabelsApi",
     "GmailMessagesApi",
     "GmailProfileError",

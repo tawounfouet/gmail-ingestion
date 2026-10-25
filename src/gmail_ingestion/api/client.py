@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from .attachments import GmailAttachmentsApi
 from .client_error import GmailApiError
+from .history import GmailHistoryApi
 from .labels import GmailLabelsApi
 from .messages import GmailMessagesApi
 
@@ -30,6 +31,7 @@ class GmailApiClient:
                 cache_discovery=False,
             )
         self.labels = GmailLabelsApi(self._service)
+        self.history = GmailHistoryApi(self._service)
         self.messages = GmailMessagesApi(self._service)
         self.attachments = GmailAttachmentsApi(self._service)
 
