@@ -57,6 +57,7 @@ class FilteredMessageSnapshot:
                 "use FullMessageSnapshot for an unfiltered scope"
             )
 
+        date_range = gmail_filter.date_range
         return self._snapshot.run(
             account_id,
             run_id=run_id,
@@ -69,4 +70,10 @@ class FilteredMessageSnapshot:
             message_limit=message_limit,
             query=gmail_filter.query,
             label_ids=gmail_filter.canonical_label_ids,
+            after=date_range.requested_after if date_range is not None else None,
+            before=date_range.requested_before if date_range is not None else None,
+            last_days=date_range.requested_last_days if date_range is not None else None,
+            resolution_timestamp=(
+                date_range.resolution_timestamp if date_range is not None else None
+            ),
         )
