@@ -78,7 +78,28 @@ History catch-up
 COMMITTED checkpoint
 ```
 
-Expected terminal result:
+At the start of prepare, the script now persists a resumable state before the Full Snapshot:
+
+```text
+snapshot_run_id: <uuid>
+prepare_state: qualification/v0.4.0-live-session.json
+```
+
+If the process is interrupted, rerun the same prepare command. The persisted `PREPARING`
+session reuses the exact Full Snapshot UUID instead of allocating a second full-mailbox export.
+
+For a snapshot created by an older gate that did not persist prepare state, recover the run UUID
+from the existing snapshot manifest and resume explicitly:
+
+```bash
+python scripts/qualify_live_incremental_sync.py prepare \
+  --full-mailbox \
+  --snapshot-run-id "<existing-snapshot-run-uuid>"
+```
+
+Do not delete the existing artifact root before attempting recovery.
+
+Expected successful terminal result:
 
 ```text
 prepare_gate: PASS

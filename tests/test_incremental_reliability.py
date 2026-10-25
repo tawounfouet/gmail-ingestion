@@ -357,8 +357,9 @@ def test_expired_cursor_recovers_with_snapshot_bootstrap_then_catch_up(
     catchup_client = _Client(_History({None: {"historyId": "510"}}), _Messages({}))
     factory = _sequence_factory([expired_client, catchup_client])
 
+    snapshot_run_id = UUID("00000000-0000-0000-0000-000000000699")
     snapshot_runner = _SnapshotRunner(
-        _SnapshotResult(UUID("00000000-0000-0000-0000-000000000699"))
+        _SnapshotResult(snapshot_run_id)
     )
 
     def snapshot_factory(*args: object, **kwargs: object) -> _SnapshotRunner:
@@ -371,8 +372,9 @@ def test_expired_cursor_recovers_with_snapshot_bootstrap_then_catch_up(
         receipt_store=receipts,
         client_factory=factory,
         snapshot_factory=snapshot_factory,
-    ).run(run_id=RUN_ID)
+    ).run(run_id=RUN_ID, snapshot_run_id=snapshot_run_id)
 
+    assert snapshot_runner.calls[0]["run_id"] == snapshot_run_id
     assert result.recovered_with_full_snapshot is True
     assert result.bootstrap_history_id == "500"
     assert result.full_snapshot_run_id == snapshot_runner.result.run_id

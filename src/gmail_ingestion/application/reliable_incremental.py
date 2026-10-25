@@ -77,6 +77,7 @@ class ReliableIncrementalSync:
         auto_full_resync: bool = True,
         snapshot_max_results: int = 500,
         snapshot_max_workers: int = 4,
+        snapshot_run_id: UUID | None = None,
     ) -> ReliableIncrementalResult:
         core = self._core()
         try:
@@ -93,7 +94,7 @@ class ReliableIncrementalSync:
             if not auto_full_resync:
                 raise
 
-        snapshot_run_id = uuid4()
+        actual_snapshot_run_id = snapshot_run_id or uuid4()
         snapshot_runner = self.snapshot_factory(
             self.provider,
             self.artifact_store,
@@ -101,10 +102,15 @@ class ReliableIncrementalSync:
         )
         snapshot = snapshot_runner.run(
             account_id,
-            run_id=snapshot_run_id,
+            run_id=actual_snapshot_run_id,
             max_results=snapshot_max_results,
             max_workers=snapshot_max_workers,
         )
+        if snapshot.run_id != actual_snapshot_run_id:
+            raise FullSnapshotRecoveryError(
+                "Full snapshot recovery returned an unexpected run_id; "
+                f"expected={actual_snapshot_run_id}, actual={snapshot.run_id}"
+            )
         if snapshot.manifest_status != "COMPLETED":
             raise FullSnapshotRecoveryError(
                 "Full snapshot recovery did not complete cleanly; "

@@ -66,6 +66,14 @@ def _parser() -> argparse.ArgumentParser:
             "into the isolated qualification artifact root."
         ),
     )
+    prepare.add_argument(
+        "--snapshot-run-id",
+        type=UUID,
+        help=(
+            "Resume a previously started Full Snapshot using its exact run UUID. "
+            "If omitted, prepare creates and persists a new resumable run UUID."
+        ),
+    )
     prepare.add_argument("--max-workers", type=int, default=4)
     prepare.add_argument("--max-results", type=int, default=500)
 
@@ -127,15 +135,24 @@ def _credential_secrets(payload: dict[str, Any]) -> tuple[bytes, ...]:
 def _tree_contains_secret(root: Path, secrets: tuple[bytes, ...]) -> bool:
     if not secrets or not root.exists():
         return False
+    longest_secret = max(len(secret) for secret in secrets)
+    overlap = max(0, longest_secret - 1)
     for path in root.rglob("*"):
         if not path.is_file():
             continue
         try:
-            data = path.read_bytes()
+            with path.open("rb") as handle:
+                tail = b""
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    data = tail + chunk
+                    if any(secret in data for secret in secrets):
+                        return True
+                    tail = data[-overlap:] if overlap else b""
         except OSError:
             continue
-        if any(secret in data for secret in secrets):
-            return True
     return False
 
 
@@ -213,11 +230,7 @@ def _prepare(args: argparse.Namespace) -> int:
         raise SystemExit("--max-results must be between 1 and 500")
     if args.max_workers < 1:
         raise SystemExit("--max-workers must be >= 1")
-    if args.session.exists():
-        raise SystemExit(
-            f"Qualification session already exists: {args.session}. "
-            "Use fresh isolated roots for a new stable gate."
-        )
+    existing_session = _read_object(args.session) if args.session.exists() else None
 
     provider = build_provider(Path("credentials.json"), args.credential_dir)
     account_id, credential_payload = provider.store.load_credentials_info(args.account_id)
@@ -225,6 +238,48 @@ def _prepare(args: argparse.Namespace) -> int:
     store = LocalArtifactStore(args.artifact_root)
     checkpoints = LocalCheckpointStore(args.checkpoint_root)
     receipts = LocalHistoryReceiptStore(args.checkpoint_root)
+
+    if existing_session is not None:
+        if existing_session.get("schema_version") != _SESSION_SCHEMA_VERSION:
+            raise SystemExit("Unsupported live qualification session schema")
+        if existing_session.get("status") != "PREPARING":
+            raise SystemExit(
+                f"Qualification session already completed or is not resumable: {args.session}"
+            )
+        if existing_session.get("account_id") != account_id:
+            raise SystemExit("Preparing session account does not match the selected Gmail account")
+        if Path(str(existing_session.get("artifact_root"))) != args.artifact_root:
+            raise SystemExit("Preparing session artifact root does not match --artifact-root")
+        if Path(str(existing_session.get("checkpoint_root"))) != args.checkpoint_root:
+            raise SystemExit("Preparing session checkpoint root does not match --checkpoint-root")
+        raw_snapshot_run_id = existing_session.get("snapshot_run_id")
+        try:
+            snapshot_run_id = UUID(str(raw_snapshot_run_id))
+        except (TypeError, ValueError) as exc:
+            raise SystemExit("Preparing session contains an invalid snapshot_run_id") from exc
+        if args.snapshot_run_id is not None and args.snapshot_run_id != snapshot_run_id:
+            raise SystemExit(
+                "--snapshot-run-id conflicts with the persisted PREPARING session run UUID"
+            )
+        print(f"resume_snapshot_run_id: {snapshot_run_id}")
+    else:
+        snapshot_run_id = args.snapshot_run_id or uuid.uuid4()
+        _write_private_json(
+            args.session,
+            {
+                "schema_version": _SESSION_SCHEMA_VERSION,
+                "status": "PREPARING",
+                "qualified_version": __version__,
+                "prepared_at": datetime.now(UTC).isoformat(),
+                "account_id": account_id,
+                "full_mailbox": True,
+                "artifact_root": str(args.artifact_root),
+                "checkpoint_root": str(args.checkpoint_root),
+                "snapshot_run_id": str(snapshot_run_id),
+            },
+        )
+        print(f"snapshot_run_id: {snapshot_run_id}")
+        print(f"prepare_state: {args.session}")
 
     if checkpoints.load_committed(account_id) is not None:
         raise SystemExit(
@@ -243,12 +298,17 @@ def _prepare(args: argparse.Namespace) -> int:
         auto_full_resync=True,
         snapshot_max_results=args.max_results,
         snapshot_max_workers=args.max_workers,
+        snapshot_run_id=snapshot_run_id,
     )
 
     if not result.recovered_with_full_snapshot:
         raise SystemExit("Prepare phase did not exercise automatic Full Snapshot recovery")
     if result.full_snapshot_run_id is None or result.bootstrap_history_id is None:
         raise SystemExit("Prepare phase did not return complete Full Snapshot bootstrap evidence")
+    if result.full_snapshot_run_id != snapshot_run_id:
+        raise SystemExit(
+            "Prepare phase returned a different Full Snapshot run than the resumable run UUID"
+        )
 
     committed = checkpoints.load_committed(account_id)
     if committed is None:
@@ -275,6 +335,7 @@ def _prepare(args: argparse.Namespace) -> int:
 
     session = {
         "schema_version": _SESSION_SCHEMA_VERSION,
+        "status": "PREPARED",
         "qualified_version": __version__,
         "prepared_at": datetime.now(UTC).isoformat(),
         "account_id": account_id,
@@ -307,6 +368,12 @@ def _verify(args: argparse.Namespace) -> int:
     session = _read_object(args.session)
     if session.get("schema_version") != _SESSION_SCHEMA_VERSION:
         raise SystemExit("Unsupported live qualification session schema")
+    if session.get("status") == "PREPARING":
+        raise SystemExit(
+            "Prepare phase is incomplete; resume prepare before running verify"
+        )
+    if session.get("status") not in {None, "PREPARED"}:
+        raise SystemExit("Qualification session is not in a verifiable state")
     if session.get("full_mailbox") is not True:
         raise SystemExit("Session is not stable-eligible because its baseline was not full-mailbox")
 
