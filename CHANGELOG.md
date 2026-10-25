@@ -4,6 +4,32 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.3.0b1 — 2026-10-25 — Date Range / Filtered Sync
+
+### Added
+
+- typed `DateRange` and frozen resolved-range contracts;
+- absolute `after` and `before` Gmail search bounds;
+- relative `last N days` resolved once against the persistent run start timestamp;
+- deterministic compilation of user query + date bounds into effective Gmail `q`;
+- `RangeMessageSnapshot` library use case using the shared snapshot engine;
+- `gmail-ingest range` CLI plus date options on `snapshot` for combined scopes;
+- manifest evidence for requested dates, resolved dates and resolution timestamp;
+- resume protection against changed absolute or relative scope;
+- range/query/labels pagination and regression qualification.
+
+### Preserved contracts
+
+```text
+normalized_schema_version = 1
+RAW semantics              = unchanged
+OAuth scope                = gmail.readonly
+stateful checkpointing     = not introduced
+```
+
+`users.history.list`, committed checkpoints and Gmail History mutations remain reserved for
+`0.4.0 — Incremental History Sync`.
+
 ## 0.3.0a1 — 2026-10-25 — Search Filters
 
 ### Added
