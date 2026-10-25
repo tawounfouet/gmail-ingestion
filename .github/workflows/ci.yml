@@ -56,6 +56,7 @@ jobs:
           python scripts/qualify_live_incremental_sync.py --help
           python scripts/qualify_live_incremental_sync.py prepare --help
           python scripts/qualify_live_incremental_sync.py verify --help
+          python scripts/render_live_incremental_evidence.py --help
           python -m gmail_ingestion --help
 
   package:

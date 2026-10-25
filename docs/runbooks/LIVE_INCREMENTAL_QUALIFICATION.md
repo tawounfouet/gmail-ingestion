@@ -220,6 +220,35 @@ OAuth secrets absent from control state PASS
 
 Only after this gate passes should the package be promoted to `0.4.0`.
 
+## Render redacted release evidence
+
+After a successful verify phase, generate the committable redacted release evidence:
+
+```bash
+python scripts/render_live_incremental_evidence.py \
+  --candidate-commit "$(git rev-parse HEAD)"
+```
+
+The renderer refuses to produce stable evidence unless:
+
+```text
+live_gate_passed = true
+stable_eligible = true
+all checks = PASS
+MESSAGE_ADDED >= 1
+MESSAGE_DELETED >= 1
+LABEL_ADDED >= 1
+LABEL_REMOVED >= 1
+```
+
+Output:
+
+```text
+docs/releases/v0.4.0-evidence.md
+```
+
+The rendered document excludes account ID, History IDs, run IDs and Gmail content.
+
 ## If verify fails because one event type is missing
 
 Do not weaken the stable release criterion.

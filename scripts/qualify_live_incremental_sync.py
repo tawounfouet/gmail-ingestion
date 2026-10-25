@@ -413,7 +413,7 @@ def _verify(args: argparse.Namespace) -> int:
         "qualified_at": datetime.now(UTC).isoformat(),
         "account_id": account_id,
         "live_gate_passed": passed,
-        "stable_eligible": tuple(required) == _EVENT_TYPES,
+        "stable_eligible": set(required) == set(_EVENT_TYPES),
         "required_event_types": list(required),
         "observed_event_types": dict(sorted(counts.items())),
         "prepare": {

@@ -409,6 +409,9 @@ python scripts/qualify_live_incremental_sync.py prepare --full-mailbox
 # perform the bounded Gmail UI changes printed by the script
 
 python scripts/qualify_live_incremental_sync.py verify
+
+python scripts/render_live_incremental_evidence.py \
+  --candidate-commit "$(git rev-parse HEAD)"
 ```
 
 The script uses isolated local artifact/checkpoint roots and never mutates Gmail itself; the
