@@ -4,6 +4,96 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.4.0rc1 — 2026-10-25 — Incremental Reliability
+
+### Added
+
+- deterministic same-run replay of immutable Gmail History RAW pages;
+- persisted History-event rehydration for crash recovery;
+- durable account-scoped History event receipts for cross-run idempotence;
+- independently versioned `history_receipt_schema_version = 1`;
+- reuse of already persisted full-message RAW during event replay;
+- `RUNNING`, `READY_TO_COMMIT`, `COMPLETED` and `RECOVERED_COMMIT` transaction evidence;
+- candidate recovery without re-contacting Gmail;
+- recovery when commit succeeded but final manifest persistence did not;
+- compare-and-swap protection on checkpoint promotion and invalidation;
+- automatic `Full Snapshot → bootstrap checkpoint → History catch-up` recovery;
+- explicit rejection of PARTIAL snapshot recovery baselines;
+- `--auto-full-resync/--no-auto-full-resync` CLI policy switch;
+- crash/replay/CAS/recovery qualification scenarios.
+
+### Recovery invariants
+
+```text
+frozen History page exists
+→ reuse it, do not call Gmail for that page again
+
+event already PROCESSED
+→ do not repeat its effect
+
+durable receipt already exists
+→ mark replay event PROCESSED without repeating its effect
+
+message RAW already exists
+→ reuse it, do not hydrate again
+
+candidate exists for same run
+→ CAS-promote it without refetching Gmail History
+
+committed checkpoint belongs to same run
+→ recover final run state without refetching Gmail History
+
+snapshot status != COMPLETED
+→ never seed a new checkpoint
+
+stale predecessor checkpoint
+→ reject promotion/invalidation
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Automated qualification
+
+```text
+candidate commit       f6eaba9ca52682163978e87db77fec20c277621b
+GitHub Actions         40198698842
+Python 3.11            PASS
+Python 3.12            PASS
+Python 3.13            PASS
+Ruff                   PASS
+mypy strict            PASS — 69 source files
+pytest                 PASS — 99/99
+CLI smoke              PASS
+wheel + sdist          PASS
+twine check            PASS
+clean wheel install    PASS
+```
+
+Candidate distributions:
+
+```text
+gmail_ingestion-0.4.0rc1-py3-none-any.whl
+sha256: 6f375ddb27b7359f39f2a9919a2382bfb71c9f88fa68544c9cb7f1d9f36f4795
+
+gmail_ingestion-0.4.0rc1.tar.gz
+sha256: c1e6467f4e65a0ca6e2f926b5fd638f821413e533ec4d534f85d89213f89d6b3
+```
+
+### Stable promotion gate
+
+The rc1 evidence above is automated. It does **not** claim that the recovery path has already been
+executed against a real Gmail mailbox. Stable `0.4.0` should perform a bounded live-mailbox
+qualification before release.
+
 ## 0.4.0b2 — 2026-10-25 — Deletions + Label Mutations
 
 ### Added

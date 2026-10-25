@@ -3,7 +3,7 @@
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
 > **Stable release:** `v0.3.0 — Filtered Ingestion Stable`  
-> **Current development target:** `v0.4.0b2 — Deletions + Label Mutations`
+> **Current development target:** `v0.4.0rc1 — Incremental Reliability`
 
 `0.3.0` is the qualified stable filtered-ingestion release. It adds deterministic Gmail search,
 label and date-range scoping while preserving normalized schema v1 and the `0.2.0` normalized-data foundation.
@@ -254,8 +254,7 @@ A committed checkpoint must already exist. The beta deliberately does not invent
 one from the current Gmail profile.
 
 If Gmail rejects `startHistoryId` as invalid or expired, the connector invalidates the committed
-checkpoint and raises a typed `FullResyncRequiredError`. Automatic full-snapshot recovery is a
-later reliability gate.
+checkpoint and raises a typed `FullResyncRequiredError`. Automatic full-snapshot recovery is provided by the `0.4.0rc1` reliability layer.
 
 Scope of `0.4.0b1`:
 
@@ -321,6 +320,84 @@ mutation records the logical relation operation without rewriting the immutable 
 
 Exact duplicate event IDs observed again within the same incremental run are reduced only once.
 
+## Incremental reliability — 0.4.0rc1
+
+The release candidate hardens the incremental transaction against process crashes, stale workers
+and expired Gmail History cursors.
+
+```text
+COMMITTED H100
+    ↓
+History page 0 ── persist immutable RAW
+    ↓
+event PENDING
+    ↓
+effect
+    ↓
+durable receipt
+    ↓
+event PROCESSED
+    ↓
+...
+    ↓
+CANDIDATE H125
+    ↓
+READY_TO_COMMIT manifest
+    ↓
+CAS(H100 → H125)
+    ↓
+COMMITTED H125
+```
+
+Same-run recovery reuses already frozen History pages and already persisted RAW messages instead of
+rewriting immutable artifacts. If a process dies after an effect but before the event becomes
+`PROCESSED`, the replay recognizes the persisted effect and finishes the event without
+re-downloading the message.
+
+Cross-run idempotence uses an account-scoped receipt store:
+
+```text
+accounts/<account_id>/history_receipts/<prefix>/<event_id>.json
+```
+
+The receipt contract is independently versioned:
+
+```text
+history_receipt_schema_version = 1
+```
+
+Checkpoint promotion and invalidation use compare-and-swap protection. A stale run cannot promote
+its candidate after another run has already advanced the committed cursor.
+
+A missing or expired cursor can recover automatically:
+
+```text
+missing / HTTP 404 cursor
+    ↓
+Full Snapshot
+    ↓ only if COMPLETED
+bootstrap checkpoint = snapshot.history_start
+    ↓
+History catch-up
+    ↓
+final committed checkpoint
+```
+
+The CLI enables this recovery path by default:
+
+```bash
+gmail-ingest incremental
+```
+
+To require strict incremental-only behavior:
+
+```bash
+gmail-ingest incremental --no-auto-full-resync
+```
+
+The rc1 qualification is automated and synthetic. A real-mailbox Gmail E2E is deliberately kept
+as a promotion gate for stable `0.4.0`.
+
 ## Normalize with the library
 
 ```python
@@ -362,6 +439,9 @@ python -m twine check dist/*
 
 ## Release documentation
 
+- `docs/releases/v0.4.0rc1.md`
+- `docs/releases/v0.4.0rc1-qualification.md`
+- `docs/runbooks/INCREMENTAL_RECOVERY.md`
 - `docs/releases/v0.4.0b2.md`
 - `docs/releases/v0.4.0b2-qualification.md`
 - `docs/runbooks/INCREMENTAL_MUTATIONS.md`
@@ -394,8 +474,8 @@ python -m twine check dist/*
 0.4.0a1    Checkpoint Foundation                  ✅ qualified
 0.4.0b1    Gmail History Incremental               ✅ qualified
 0.4.0b2    Deletions + Label Mutations             ✅ qualified
-0.4.0rc1   Incremental Reliability                 ← next
-0.4.0      Incremental Sync Stable                 planned
+0.4.0rc1   Incremental Reliability                 ✅ qualified
+0.4.0      Incremental Sync Stable                 ← next
 ```
 
 ## License
