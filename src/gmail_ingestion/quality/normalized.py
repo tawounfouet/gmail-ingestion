@@ -43,7 +43,6 @@ def validate_normalized_tables(
         child_fields=("account_id", "thread_id"),
         parent="messages",
         parent_fields=("account_id", "thread_id"),
-        require_parent_key_not_unique=True,
     )
     for child in ("message_headers", "message_recipients", "mime_parts", "attachments"):
         _fk(
@@ -95,6 +94,7 @@ def _unique_keys(name: str, rows: Sequence[Mapping[str, Any]]) -> None:
     contract = TABLE_CONTRACTS[name]
     seen: set[tuple[Any, ...]] = set()
     for index, row in enumerate(rows):
+        key: tuple[Any, ...]
         if name == "attachments" and row.get("attachment_id") is None:
             key = (
                 row.get("account_id"),
@@ -117,7 +117,6 @@ def _fk(
     child_fields: tuple[str, ...],
     parent: str,
     parent_fields: tuple[str, ...],
-    require_parent_key_not_unique: bool = False,
 ) -> None:
     if child not in tables or parent not in tables:
         return
@@ -132,7 +131,6 @@ def _fk(
             raise NormalizedQualityError(
                 f"{relation} broken at {child}[{index}] for key {key!r}"
             )
-    _ = require_parent_key_not_unique
 
 
 def _message_schema_version(rows: Sequence[Mapping[str, Any]]) -> None:
