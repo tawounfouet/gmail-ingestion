@@ -43,6 +43,8 @@ class GmailCheckpointStore(Protocol):
         checkpoint: GmailCheckpoint,
         *,
         committed_at: datetime | None = None,
+        expected_committed_history_id: str | None = None,
+        require_no_committed: bool = False,
     ) -> GmailCheckpoint: ...
 
     def discard_candidate(self, account_id: str, run_id: UUID) -> None: ...
@@ -95,8 +97,10 @@ class LocalCheckpointStore:
         checkpoint: GmailCheckpoint,
         *,
         committed_at: datetime | None = None,
+        expected_committed_history_id: str | None = None,
+        require_no_committed: bool = False,
     ) -> GmailCheckpoint:
-        """Atomically promote a persisted candidate to the committed pointer."""
+        """Atomically promote a persisted candidate with optional CAS protection."""
         if checkpoint.state is not CheckpointState.CANDIDATE:
             raise CheckpointStoreError("commit requires a CANDIDATE checkpoint")
         candidate_path = self._candidate_path(checkpoint.account_id, checkpoint.run_id)
@@ -110,8 +114,21 @@ class LocalCheckpointStore:
                 f"Persisted candidate differs for run {checkpoint.run_id}"
             )
 
-        committed = checkpoint.commit(committed_at=committed_at)
         committed_path = self._checkpoint_dir(checkpoint.account_id) / "committed.json"
+        current = self._load_optional(committed_path)
+        if require_no_committed and current is not None:
+            raise CheckpointConflictError(
+                f"Committed checkpoint already exists for {checkpoint.account_id}"
+            )
+        if expected_committed_history_id is not None:
+            if current is None or current.history_id != expected_committed_history_id:
+                actual = current.history_id if current is not None else None
+                raise CheckpointConflictError(
+                    "Committed checkpoint changed before promotion: "
+                    f"expected {expected_committed_history_id!r}, got {actual!r}"
+                )
+
+        committed = checkpoint.commit(committed_at=committed_at)
         self._write_checkpoint(committed_path, committed)
         candidate_path.unlink(missing_ok=True)
         return committed

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -34,19 +34,7 @@ class SnapshotResultProtocol(Protocol):
     manifest_status: str
 
 
-class SnapshotRunnerProtocol(Protocol):
-    def run(
-        self,
-        account_id: str | None = None,
-        *,
-        run_id: UUID | None = None,
-        max_results: int = 500,
-        max_workers: int = 4,
-        **kwargs: object,
-    ) -> SnapshotResultProtocol: ...
-
-
-SnapshotFactory = Callable[..., SnapshotRunnerProtocol]
+SnapshotFactory = Callable[..., Any]
 ClientFactory = Callable[..., GmailApiClient]
 
 
