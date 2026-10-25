@@ -30,7 +30,7 @@ The stable candidate is automatically qualified:
 Python 3.11       PASS
 Python 3.12       PASS
 Python 3.13       PASS
-pytest            40/40 PASS
+pytest            43/43 PASS
 Ruff              PASS
 mypy strict       PASS
 wheel + sdist     PASS
@@ -39,9 +39,9 @@ clean install     PASS
 PyIngestKit       v2.1.0 verified
 ```
 
-The **only remaining stable-release gate** is a real Gmail test mailbox executed through this
-package's own Desktop OAuth and Gmail API client path. The connected Gmail integration used for
-source-shape validation is intentionally not treated as a substitute.
+The stable candidate has passed the package's own real Gmail Desktop OAuth E2E, including a
+50-message bounded snapshot, MIME processing, resume, and a targeted 10-message
+`has:attachment` attachment-download qualification.
 
 ## Stable Snapshot Foundation
 
@@ -78,7 +78,8 @@ source-shape validation is intentionally not treated as a substitute.
 - attachment and inline-resource detection;
 - metadata-only default;
 - optional binary download with SHA-256 and size limit;
-- separate binary storage.
+- separate binary storage;
+- bounded deterministic physical filenames for long Gmail attachment IDs.
 
 ### Manifest
 
@@ -217,8 +218,8 @@ python -m twine check dist/*
 0.1.0b1    Full Message Snapshot                ✅
 0.1.0b2    MIME + Attachments + Manifest        ✅
 0.1.0rc1   Snapshot Qualification               ✅ automated qualified
-0.1.0      Snapshot Foundation Stable           ← automated GO / live E2E pending
-0.2.0      Normalized Dataset                   next after stable publication
+0.1.0      Snapshot Foundation Stable           ✅ qualified for publication
+0.2.0      Normalized Dataset                   next
 ```
 
 ## License

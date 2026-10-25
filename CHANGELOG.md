@@ -4,7 +4,7 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
-## 0.1.0 — Unreleased stable promotion
+## 0.1.0 — 2026-10-25 — Snapshot Foundation Stable
 
 ### Changed
 
@@ -16,15 +16,18 @@ The project follows Semantic Versioning with pre-release milestones during the p
 - persist the exact Gmail `nextPageToken` for mid-discovery resume;
 - bound hydration futures instead of submitting the entire mailbox at once;
 - checkpoint discovery/fetch state in batches rather than after every hydrated message;
-- add a bounded live qualification sample mode for large mailboxes.
+- add a bounded live qualification sample mode for large mailboxes;
+- add deterministic `has:attachment` qualification for the binary path;
+- bound physical attachment filenames with SHA-256-derived keys for filesystem portability;
+- ignore local live-mailbox and qualification artifacts.
 
 ### Automated qualification
 
-The release branch is green on Python 3.11, 3.12 and 3.13. The large-mailbox hardened candidate
-`e3cf260813fc7cc0ff14bf2ad4897a40de784f40` passed:
+The qualified stable candidate `b08dde3220d583293dbd1eee96e35761f4194a98` is green on
+Python 3.11, 3.12 and 3.13:
 
 ```text
-40/40 tests
+43/43 tests
 Ruff
 mypy strict
 CLI smoke
@@ -37,8 +40,11 @@ SHA-256 generation
 
 ### Release gate
 
-The remaining gate is the package's own real Gmail Desktop OAuth E2E. Until it passes, merge,
-`v0.1.0` tag and GitHub stable release remain intentionally blocked.
+The package's own real Gmail Desktop OAuth E2E passed on 2026-10-25. The bounded qualification
+processed 50 real messages, resumed the same run without count drift, and separately processed
+10 `has:attachment` messages with 10 successful attachment downloads and zero attachment failures.
+
+The stable release is approved for merge and publication after post-merge CI.
 
 ## 0.1.0rc1 — Snapshot Qualification
 
