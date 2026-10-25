@@ -2,10 +2,11 @@
 
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
-> **Current release target:** `v0.2.0 — Normalized Dataset Stable`
+> **Stable release:** `v0.2.0 — Normalized Dataset Stable`  
+> **Current development target:** `v0.3.0a1 — Search Filters`
 
-`0.2.0` preserves the qualified `0.1.0` Gmail snapshot path and adds the first stable
-analytical contract.
+`0.2.0` is frozen as the stable normalized-data foundation. `0.3.0a1` adds explicit Gmail
+search and label filtering without changing the normalized schema v1 contract.
 
 ```text
 Gmail API
@@ -21,15 +22,14 @@ Quality checks
 Parquet
 ```
 
-## Release status
+## Stable foundation
 
-The pre-promotion candidate is automatically qualified on:
+The published `0.2.0` release was qualified on:
 
 ```text
 Python 3.11       PASS
 Python 3.12       PASS
 Python 3.13       PASS
-pytest            46/46 PASS
 Ruff              PASS
 mypy strict       PASS
 wheel + sdist     PASS
@@ -38,8 +38,8 @@ clean install     PASS
 PyIngestKit       v2.1.0 verified
 ```
 
-The source-extraction layer remains the same qualified `gmail.readonly` Snapshot Foundation
-released in `0.1.0`. The `0.2.0` transformation path performs no Gmail API call.
+The source-extraction layer remains based on the qualified `gmail.readonly` Snapshot Foundation.
+The `0.3.0a1` work changes message discovery scope only; RAW hydration and normalization remain unchanged.
 
 ## Stable normalized contract
 
@@ -113,6 +113,32 @@ gmail-ingest snapshot \
   --max-attachment-bytes 10485760
 ```
 
+## Filtered snapshot — 0.3.0a1
+
+Gmail-native query:
+
+```bash
+gmail-ingest snapshot --query "has:attachment"
+```
+
+Label-filtered discovery:
+
+```bash
+gmail-ingest snapshot --label-id IMPORTANT --label-id INBOX
+```
+
+Combined search, labels and Spam/Trash policy:
+
+```bash
+gmail-ingest snapshot \
+  --query "from:example.com" \
+  --label-id IMPORTANT \
+  --include-spam-trash
+```
+
+The filter is captured in the run manifest with requested/effective values and a deterministic
+scope fingerprint. Date ranges belong to `0.3.0b1`.
+
 ## Normalize with the library
 
 ```python
@@ -168,8 +194,10 @@ python -m twine check dist/*
 0.2.0a1    Normalized Data Model                ✅
 0.2.0b1    Threads + Relations                  ✅
 0.2.0rc1   Normalization Qualification          ✅
-0.2.0      Normalized Dataset Stable            candidate
-0.3.0      Search / Date Range / Filtered       next
+0.2.0      Normalized Dataset Stable            ✅ released / frozen
+0.3.0a1    Search Filters                        🚧 current
+0.3.0b1    Date Range / Filtered Sync            next
+0.3.0      Filtered Ingestion Stable             planned
 ```
 
 ## License
