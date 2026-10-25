@@ -3,10 +3,10 @@
 Reliable, versioned Gmail ingestion built on [PyIngestKit](https://github.com/tawounfouet/pyingestkit).
 
 > **Stable release:** `v0.2.0 — Normalized Dataset Stable`  
-> **Current development target:** `v0.3.0a1 — Search Filters`
+> **Current development target:** `v0.3.0b1 — Date Range / Filtered Sync`
 
-`0.2.0` is frozen as the stable normalized-data foundation. `0.3.0a1` adds explicit Gmail
-search and label filtering without changing the normalized schema v1 contract.
+`0.2.0` is frozen as the stable normalized-data foundation. `0.3.0b1` extends the qualified
+search-filter slice with deterministic absolute and relative date ranges, without changing normalized schema v1.
 
 ```text
 Gmail API
@@ -113,7 +113,7 @@ gmail-ingest snapshot \
   --max-attachment-bytes 10485760
 ```
 
-## Filtered snapshot — 0.3.0a1
+## Filtered snapshot — 0.3.0
 
 Gmail-native query:
 
@@ -137,7 +137,31 @@ gmail-ingest snapshot \
 ```
 
 The filter is captured in the run manifest with requested/effective values and a deterministic
-scope fingerprint. Date ranges belong to `0.3.0b1`.
+scope fingerprint.
+
+Date range:
+
+```bash
+gmail-ingest range \
+  --after 2026-10-01 \
+  --before 2026-10-24
+```
+
+Relative range frozen at run start:
+
+```bash
+gmail-ingest range --last-days 7
+```
+
+Combined source scope:
+
+```bash
+gmail-ingest range \
+  --query "has:attachment" \
+  --label-id IMPORTANT \
+  --after 2026-10-01 \
+  --before 2026-10-24
+```
 
 ## Normalize with the library
 
@@ -195,9 +219,9 @@ python -m twine check dist/*
 0.2.0b1    Threads + Relations                  ✅
 0.2.0rc1   Normalization Qualification          ✅
 0.2.0      Normalized Dataset Stable            ✅ released / frozen
-0.3.0a1    Search Filters                        🚧 current
-0.3.0b1    Date Range / Filtered Sync            next
-0.3.0      Filtered Ingestion Stable             planned
+0.3.0a1    Search Filters                        ✅ qualified slice
+0.3.0b1    Date Range / Filtered Sync            🚧 current
+0.3.0      Filtered Ingestion Stable             next
 ```
 
 ## License
