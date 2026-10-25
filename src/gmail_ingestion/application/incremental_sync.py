@@ -1,4 +1,4 @@
-"""Stateful Gmail History incremental synchronization for 0.4.0b1."""
+"""Stateful Gmail History incremental synchronization for 0.4.0b2."""
 
 from __future__ import annotations
 
@@ -12,13 +12,22 @@ from pyingestkit.artifacts.base import ArtifactStore
 
 from gmail_ingestion.api import GmailApiClient, GmailHistoryExpiredError
 from gmail_ingestion.auth.provider import GmailOAuthProvider
-from gmail_ingestion.domain import GmailCheckpoint, map_message_added_events
+from gmail_ingestion.domain import GmailCheckpoint, map_history_events
 from gmail_ingestion.persistence import (
     GmailCheckpointStore,
     HistoryEventWriter,
     IncrementalManifestWriter,
+    IncrementalMutationWriter,
     RawHistoryWriter,
     RawMessageWriter,
+)
+from gmail_ingestion.sync import reduce_history_event
+
+_SUPPORTED_HISTORY_TYPES = (
+    "messageAdded",
+    "messageDeleted",
+    "labelAdded",
+    "labelRemoved",
 )
 
 
@@ -64,13 +73,16 @@ class IncrementalHistoryResult:
     output_history_id: str
     pages_scanned: int
     events_persisted: int
+    duplicate_events_ignored: int
     messages_hydrated: int
+    message_tombstones: int
+    label_mutations: int
     committed_checkpoint: GmailCheckpoint
     manifest_path: str
 
 
 class IncrementalHistorySync:
-    """Apply messageAdded changes after the current committed Gmail checkpoint."""
+    """Apply Gmail History additions, deletions and label mutations transactionally."""
 
     def __init__(
         self,
@@ -110,6 +122,7 @@ class IncrementalHistorySync:
         )
         history_writer = RawHistoryWriter(self.artifact_store)
         event_writer = HistoryEventWriter(self.artifact_store)
+        mutation_writer = IncrementalMutationWriter(self.artifact_store)
         message_writer = RawMessageWriter(self.artifact_store)
         manifest_writer = IncrementalManifestWriter(self.artifact_store)
 
@@ -119,7 +132,11 @@ class IncrementalHistorySync:
         page_token: str | None = None
         page_index = 0
         event_count = 0
+        duplicate_event_count = 0
+        tombstone_count = 0
+        label_mutation_count = 0
         hydrated_message_ids: set[str] = set()
+        seen_event_ids: set[str] = set()
 
         try:
             while True:
@@ -128,7 +145,7 @@ class IncrementalHistorySync:
                         start_history_id=input_history_id,
                         page_token=page_token,
                         max_results=max_results,
-                        history_types=("messageAdded",),
+                        history_types=_SUPPORTED_HISTORY_TYPES,
                     )
                 except GmailHistoryExpiredError as exc:
                     self.checkpoint_store.invalidate(
@@ -148,7 +165,10 @@ class IncrementalHistorySync:
                             output_history_id=None,
                             pages_scanned=page_index,
                             events_persisted=event_count,
+                            duplicate_events_ignored=duplicate_event_count,
                             messages_hydrated=len(hydrated_message_ids),
+                            message_tombstones=tombstone_count,
+                            label_mutations=label_mutation_count,
                         ),
                     )
                     raise FullResyncRequiredError(
@@ -164,7 +184,7 @@ class IncrementalHistorySync:
                     start_history_id=input_history_id,
                     page_token=page_token,
                 )
-                mapped = map_message_added_events(
+                mapped = map_history_events(
                     account_id=resolved,
                     run_id=actual_run_id,
                     page=page,
@@ -172,15 +192,31 @@ class IncrementalHistorySync:
                     source_page_token=page_token,
                 )
                 for event in mapped:
+                    if event.event_id in seen_event_ids:
+                        duplicate_event_count += 1
+                        continue
+                    seen_event_ids.add(event.event_id)
+
                     event_writer.write(event)
                     event_count += 1
+                    reduction = reduce_history_event(event)
 
-                for event in mapped:
-                    if event.message_id in hydrated_message_ids:
-                        continue
-                    payload = client.messages.get_message(event.message_id, format="full")
-                    message_writer.write(actual_run_id, event.message_id, payload)
-                    hydrated_message_ids.add(event.message_id)
+                    if reduction.hydrate_message_id is not None:
+                        message_id = reduction.hydrate_message_id
+                        if message_id not in hydrated_message_ids:
+                            payload = client.messages.get_message(message_id, format="full")
+                            message_writer.write(actual_run_id, message_id, payload)
+                            hydrated_message_ids.add(message_id)
+
+                    if reduction.tombstone is not None:
+                        mutation_writer.write_tombstone(reduction.tombstone)
+                        tombstone_count += 1
+
+                    if reduction.label_mutation is not None:
+                        mutation_writer.write_label_mutation(reduction.label_mutation)
+                        label_mutation_count += 1
+
+                    event_writer.write(event.mark_processed())
 
                 page_history_id = page.get("historyId")
                 if isinstance(page_history_id, str) and page_history_id:
@@ -215,7 +251,10 @@ class IncrementalHistorySync:
                     output_history_id=committed.history_id,
                     pages_scanned=page_index,
                     events_persisted=event_count,
+                    duplicate_events_ignored=duplicate_event_count,
                     messages_hydrated=len(hydrated_message_ids),
+                    message_tombstones=tombstone_count,
+                    label_mutations=label_mutation_count,
                     committed_checkpoint=committed,
                 ),
             )
@@ -226,7 +265,10 @@ class IncrementalHistorySync:
                 output_history_id=committed.history_id,
                 pages_scanned=page_index,
                 events_persisted=event_count,
+                duplicate_events_ignored=duplicate_event_count,
                 messages_hydrated=len(hydrated_message_ids),
+                message_tombstones=tombstone_count,
+                label_mutations=label_mutation_count,
                 committed_checkpoint=committed,
                 manifest_path=manifest_path,
             )
@@ -246,7 +288,10 @@ class IncrementalHistorySync:
                     output_history_id=None,
                     pages_scanned=page_index,
                     events_persisted=event_count,
+                    duplicate_events_ignored=duplicate_event_count,
                     messages_hydrated=len(hydrated_message_ids),
+                    message_tombstones=tombstone_count,
+                    label_mutations=label_mutation_count,
                 ),
             )
             raise
@@ -263,13 +308,16 @@ def _manifest_payload(
     output_history_id: str | None,
     pages_scanned: int,
     events_persisted: int,
+    duplicate_events_ignored: int,
     messages_hydrated: int,
+    message_tombstones: int,
+    label_mutations: int,
     committed_checkpoint: GmailCheckpoint | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "mode": "incremental_history",
-        "history_types": ["messageAdded"],
+        "history_types": list(_SUPPORTED_HISTORY_TYPES),
         "run_id": str(run_id),
         "account_id": account_id,
         "started_at": started_at.isoformat(),
@@ -282,7 +330,10 @@ def _manifest_payload(
         ),
         "pages_scanned": pages_scanned,
         "events_persisted": events_persisted,
+        "duplicate_events_ignored": duplicate_events_ignored,
         "messages_hydrated": messages_hydrated,
+        "message_tombstones": message_tombstones,
+        "label_mutations": label_mutations,
         "message_format": "full",
     }
 

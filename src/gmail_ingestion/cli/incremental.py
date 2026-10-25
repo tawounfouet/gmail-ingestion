@@ -48,7 +48,7 @@ def incremental_command(
         typer.Option("--max-results", min=1, max=500, help="History records per Gmail page."),
     ] = 500,
 ) -> None:
-    """Apply Gmail messageAdded history after the last committed checkpoint."""
+    """Apply Gmail additions, deletions and label mutations after the committed checkpoint."""
     try:
         parsed_run_id = UUID(run_id) if run_id is not None else None
         provider = build_provider(Path("credentials.json"), credential_dir)
@@ -80,5 +80,8 @@ def incremental_command(
     typer.echo(f"committed_checkpoint: {result.output_history_id}")
     typer.echo(f"pages_scanned: {result.pages_scanned}")
     typer.echo(f"events_persisted: {result.events_persisted}")
+    typer.echo(f"duplicate_events_ignored: {result.duplicate_events_ignored}")
     typer.echo(f"messages_hydrated: {result.messages_hydrated}")
+    typer.echo(f"message_tombstones: {result.message_tombstones}")
+    typer.echo(f"label_mutations: {result.label_mutations}")
     typer.echo(f"manifest: {result.manifest_path}")

@@ -8,6 +8,8 @@ from .history import (
     GmailHistoryEvent,
     GmailHistoryEventType,
     GmailHistoryMappingError,
+    HistoryProcessingStatus,
+    map_history_events,
     map_message_added_events,
 )
 from .label import GmailLabel
@@ -27,8 +29,10 @@ __all__ = [
     "GmailHistoryEventType",
     "GmailHistoryMappingError",
     "GmailLabel",
+    "HistoryProcessingStatus",
     "MessageDiscoveryRecord",
-    "map_message_added_events",
-    "ResolvedDateRange",
     "MessageFetchStatus",
+    "ResolvedDateRange",
+    "map_history_events",
+    "map_message_added_events",
 ]

@@ -10,6 +10,7 @@ from .checkpoint_store import (
     LocalCheckpointStore,
 )
 from .history_writer import HistoryEventWriter, IncrementalManifestWriter, RawHistoryWriter
+from .incremental_mutation_writer import IncrementalMutationWriter
 from .labels_writer import LabelsParquetWriter, LabelsWriteResult
 from .message_analysis import MessageAnalysisWriter
 from .parquet import NormalizedParquetWriter, NormalizedParquetWriteResult
@@ -26,9 +27,10 @@ __all__ = [
     "GmailCheckpointStore",
     "HistoryEventWriter",
     "IncrementalManifestWriter",
+    "IncrementalMutationWriter",
     "LabelsParquetWriter",
-    "LocalCheckpointStore",
     "LabelsWriteResult",
+    "LocalCheckpointStore",
     "MessageAnalysisWriter",
     "NormalizedParquetWriteResult",
     "NormalizedParquetWriter",
