@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from .client_error import GmailApiError
+from .client_error import GmailApiError, GmailMessageNotFoundError
 
 
 class GmailMessagesApi:
@@ -66,8 +66,23 @@ class GmailMessagesApi:
                 .execute()
             )
         except Exception as exc:  # noqa: BLE001 - sanitize Google SDK failures
+            if _http_status(exc) == 404:
+                raise GmailMessageNotFoundError(
+                    f"Gmail message {message_id!r} no longer exists"
+                ) from exc
             raise GmailApiError(f"Unable to retrieve Gmail message {message_id!r}") from exc
 
         if not isinstance(response, dict):
             raise GmailApiError("Gmail messages.get response is not a JSON object")
         return cast(Mapping[str, Any], response)
+
+
+def _http_status(exc: BaseException) -> int | None:
+    response = getattr(exc, "resp", None)
+    value = getattr(response, "status", None)
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

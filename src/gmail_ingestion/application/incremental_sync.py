@@ -10,7 +10,11 @@ from uuid import UUID, uuid4
 
 from pyingestkit.artifacts.base import ArtifactStore
 
-from gmail_ingestion.api import GmailApiClient, GmailHistoryExpiredError
+from gmail_ingestion.api import (
+    GmailApiClient,
+    GmailHistoryExpiredError,
+    GmailMessageNotFoundError,
+)
 from gmail_ingestion.auth.provider import GmailOAuthProvider
 from gmail_ingestion.domain import (
     GmailCheckpoint,
@@ -84,6 +88,7 @@ class IncrementalHistoryResult:
     replayed_events: int
     messages_hydrated: int
     messages_reused: int
+    messages_unavailable: int
     message_tombstones: int
     label_mutations: int
     committed_checkpoint: GmailCheckpoint
@@ -224,6 +229,7 @@ class IncrementalHistorySync:
         label_mutation_count = 0
         hydrated_message_ids: set[str] = set()
         reused_message_ids: set[str] = set()
+        unavailable_message_ids: set[str] = set()
         seen_event_ids: set[str] = set()
         candidate_history_id: str | None = None
 
@@ -264,6 +270,7 @@ class IncrementalHistorySync:
                                 replayed_events=replayed_event_count,
                                 messages_hydrated=len(hydrated_message_ids),
                                 messages_reused=len(reused_message_ids),
+                                messages_unavailable=len(unavailable_message_ids),
                                 message_tombstones=tombstone_count,
                                 label_mutations=label_mutation_count,
                                 durable_receipts=self.receipt_store is not None,
@@ -344,12 +351,16 @@ class IncrementalHistorySync:
                             if message_writer.exists(actual_run_id, message_id):
                                 reused_message_ids.add(message_id)
                             else:
-                                payload = client.messages.get_message(
-                                    message_id,
-                                    format="full",
-                                )
-                                message_writer.write(actual_run_id, message_id, payload)
-                                hydrated_message_ids.add(message_id)
+                                try:
+                                    payload = client.messages.get_message(
+                                        message_id,
+                                        format="full",
+                                    )
+                                except GmailMessageNotFoundError:
+                                    unavailable_message_ids.add(message_id)
+                                else:
+                                    message_writer.write(actual_run_id, message_id, payload)
+                                    hydrated_message_ids.add(message_id)
 
                     if reduction.tombstone is not None:
                         mutation_writer.write_tombstone(reduction.tombstone)
@@ -406,6 +417,7 @@ class IncrementalHistorySync:
                     replayed_events=replayed_event_count,
                     messages_hydrated=len(hydrated_message_ids),
                     messages_reused=len(reused_message_ids),
+                    messages_unavailable=len(unavailable_message_ids),
                     message_tombstones=tombstone_count,
                     label_mutations=label_mutation_count,
                     durable_receipts=self.receipt_store is not None,
@@ -434,6 +446,7 @@ class IncrementalHistorySync:
                     replayed_events=replayed_event_count,
                     messages_hydrated=len(hydrated_message_ids),
                     messages_reused=len(reused_message_ids),
+                    messages_unavailable=len(unavailable_message_ids),
                     message_tombstones=tombstone_count,
                     label_mutations=label_mutation_count,
                     durable_receipts=self.receipt_store is not None,
@@ -452,6 +465,7 @@ class IncrementalHistorySync:
                 replayed_events=replayed_event_count,
                 messages_hydrated=len(hydrated_message_ids),
                 messages_reused=len(reused_message_ids),
+                messages_unavailable=len(unavailable_message_ids),
                 message_tombstones=tombstone_count,
                 label_mutations=label_mutation_count,
                 committed_checkpoint=committed,
@@ -478,6 +492,7 @@ class IncrementalHistorySync:
                     replayed_events=replayed_event_count,
                     messages_hydrated=len(hydrated_message_ids),
                     messages_reused=len(reused_message_ids),
+                    messages_unavailable=len(unavailable_message_ids),
                     message_tombstones=tombstone_count,
                     label_mutations=label_mutation_count,
                     durable_receipts=self.receipt_store is not None,
@@ -505,6 +520,7 @@ def _manifest_payload(
     message_tombstones: int,
     label_mutations: int,
     durable_receipts: bool,
+    messages_unavailable: int = 0,
     committed_checkpoint: GmailCheckpoint | None = None,
 ) -> dict[str, Any]:
     return {
@@ -528,6 +544,7 @@ def _manifest_payload(
         "replayed_events": replayed_events,
         "messages_hydrated": messages_hydrated,
         "messages_reused": messages_reused,
+        "messages_unavailable": messages_unavailable,
         "message_tombstones": message_tombstones,
         "label_mutations": label_mutations,
         "message_format": "full",
@@ -633,6 +650,7 @@ def _result_from_manifest(
         replayed_events=_manifest_count(payload, "replayed_events"),
         messages_hydrated=_manifest_count(payload, "messages_hydrated"),
         messages_reused=_manifest_count(payload, "messages_reused"),
+        messages_unavailable=_manifest_count(payload, "messages_unavailable"),
         message_tombstones=_manifest_count(payload, "message_tombstones"),
         label_mutations=_manifest_count(payload, "label_mutations"),
         committed_checkpoint=committed,

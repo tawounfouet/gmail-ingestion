@@ -7,7 +7,11 @@ from uuid import UUID
 import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
-from gmail_ingestion.api import GmailApiError, GmailHistoryExpiredError
+from gmail_ingestion.api import (
+    GmailApiError,
+    GmailHistoryExpiredError,
+    GmailMessageNotFoundError,
+)
 from gmail_ingestion.application import (
     FullResyncRequiredError,
     IncrementalHistorySync,
@@ -75,15 +79,19 @@ class _Messages:
         payloads: dict[str, dict[str, Any]],
         *,
         fail_message_id: str | None = None,
+        missing_message_id: str | None = None,
     ) -> None:
         self.payloads = payloads
         self.fail_message_id = fail_message_id
+        self.missing_message_id = missing_message_id
         self.calls: list[tuple[str, str]] = []
 
     def get_message(self, message_id: str, *, format: str = "full") -> dict[str, Any]:
         self.calls.append((message_id, format))
         if message_id == self.fail_message_id:
             raise GmailApiError(f"unable to hydrate {message_id}")
+        if message_id == self.missing_message_id:
+            raise GmailMessageNotFoundError(f"message disappeared: {message_id}")
         return self.payloads[message_id]
 
 
@@ -444,3 +452,59 @@ def test_incremental_requires_existing_committed_checkpoint(tmp_path: Path) -> N
             LocalCheckpointStore(tmp_path / "checkpoints"),
             client_factory=_factory(_History({}), _Messages({})),
         ).run(run_id=RUN_ID)
+
+
+def test_message_added_then_deleted_before_hydration_is_not_fatal(
+    tmp_path: Path,
+) -> None:
+    artifacts = LocalArtifactStore(tmp_path / "artifacts")
+    checkpoints = LocalCheckpointStore(tmp_path / "checkpoints")
+    _seed_checkpoint(checkpoints)
+
+    history = _History(
+        {
+            None: {
+                "history": [
+                    {
+                        "id": "101",
+                        "messagesAdded": [
+                            {"message": {"id": "gone", "threadId": "t-gone"}}
+                        ],
+                    },
+                    {
+                        "id": "102",
+                        "messagesDeleted": [
+                            {"message": {"id": "gone", "threadId": "t-gone"}}
+                        ],
+                    },
+                ],
+                "historyId": "130",
+            }
+        }
+    )
+    messages = _Messages({}, missing_message_id="gone")
+
+    result = IncrementalHistorySync(
+        _Provider(),
+        artifacts,
+        checkpoints,
+        client_factory=_factory(history, messages),
+    ).run(run_id=RUN_ID)
+
+    assert result.output_history_id == "130"
+    assert result.messages_hydrated == 0
+    assert result.messages_unavailable == 1
+    assert result.message_tombstones == 1
+    assert checkpoints.load_committed(ACCOUNT_ID) == result.committed_checkpoint
+
+    history_root = artifacts.run_root("gmail.history", RUN_ID)
+    event_paths = list((history_root / "history_events").glob("*.json"))
+    assert len(event_paths) == 2
+    assert {
+        json.loads(path.read_text(encoding="utf-8"))["processing_status"]
+        for path in event_paths
+    } == {"PROCESSED"}
+
+    manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+    assert manifest["status"] == "COMPLETED"
+    assert manifest["messages_unavailable"] == 1

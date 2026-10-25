@@ -1,5 +1,8 @@
 from typing import Any
 
+import pytest
+
+from gmail_ingestion.api import GmailMessageNotFoundError
 from gmail_ingestion.api.messages import GmailMessagesApi
 
 
@@ -48,3 +51,39 @@ def test_messages_list_page_and_full_get() -> None:
     )
     assert page["nextPageToken"] == "later"
     assert api.get_message("m1", format="full")["id"] == "m1"
+
+
+class _Response:
+    status = 404
+
+
+class _Http404(Exception):
+    def __init__(self) -> None:
+        self.resp = _Response()
+
+
+class _MissingRequest:
+    def execute(self) -> dict[str, object]:
+        raise _Http404()
+
+
+class _MissingMessages(_Messages):
+    def get(self, **kwargs: Any) -> _MissingRequest:
+        assert kwargs == {"userId": "me", "id": "gone", "format": "full"}
+        return _MissingRequest()
+
+
+class _MissingUsers:
+    def messages(self) -> _MissingMessages:
+        return _MissingMessages()
+
+
+class _MissingService:
+    def users(self) -> _MissingUsers:
+        return _MissingUsers()
+
+
+def test_messages_get_maps_404_to_message_not_found() -> None:
+    api = GmailMessagesApi(_MissingService())
+    with pytest.raises(GmailMessageNotFoundError, match="no longer exists"):
+        api.get_message("gone", format="full")
