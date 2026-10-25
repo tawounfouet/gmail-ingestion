@@ -16,7 +16,7 @@ from pyingestkit.retry import RetryPolicy
 from gmail_ingestion.api import GmailApiClient, GmailApiError, map_gmail_profile
 from gmail_ingestion.auth.provider import GmailOAuthProvider
 from gmail_ingestion.control import MessageDiscoveryQueue
-from gmail_ingestion.domain import MessageFetchStatus
+from gmail_ingestion.domain import GmailFilter, MessageFetchStatus
 from gmail_ingestion.manifest import GmailRunManifest, ManifestIssue, ManifestWriter
 from gmail_ingestion.persistence import RawMessageWriter
 
@@ -112,6 +112,7 @@ class FullMessageSnapshot:
         max_attachment_bytes: int | None = None,
         message_limit: int | None = None,
         query: str | None = None,
+        label_ids: Sequence[str] = (),
     ) -> FullSnapshotResult:
         """Run or resume a full Gmail snapshot through MIME/attachment analysis."""
         if not 1 <= max_results <= 500:
@@ -124,8 +125,11 @@ class FullMessageSnapshot:
             raise ValueError("max_attachment_bytes must be >= 1 when provided")
         if message_limit is not None and message_limit < 1:
             raise ValueError("message_limit must be >= 1 when provided")
-        if query is not None and not query.strip():
-            raise ValueError("query must not be empty when provided")
+        gmail_filter = GmailFilter.from_values(
+            query=query,
+            label_ids=label_ids,
+            include_spam_trash=include_spam_trash,
+        )
 
         resolved, credentials = self.provider.load(account_id)
         source_client = cast(GmailClientProtocol, self.client_factory(credentials=credentials))
@@ -140,7 +144,8 @@ class FullMessageSnapshot:
             download_attachments=download_attachments,
             max_attachment_bytes=max_attachment_bytes,
             message_limit=message_limit,
-            query=query,
+            query=gmail_filter.query,
+            label_ids=gmail_filter.canonical_label_ids,
         )
         existing_started_at = manifest_writer.existing_started_at(actual_run_id)
         started_at = existing_started_at or datetime.now(UTC)
@@ -166,7 +171,8 @@ class FullMessageSnapshot:
                     download_attachments=download_attachments,
                     max_attachment_bytes=max_attachment_bytes,
                     message_limit=message_limit,
-                    query=query,
+                    query=gmail_filter.query,
+                    label_ids=gmail_filter.canonical_label_ids,
                     resumed=resumed,
                 )
             )
@@ -178,7 +184,8 @@ class FullMessageSnapshot:
                     include_spam_trash=include_spam_trash,
                     max_results=max_results,
                     message_limit=message_limit,
-                    query=query,
+                    query=gmail_filter.query,
+                    label_ids=gmail_filter.canonical_label_ids,
                 )
 
             writer = RawMessageWriter(self.artifact_store)
@@ -229,7 +236,8 @@ class FullMessageSnapshot:
                 download_attachments=download_attachments,
                 max_attachment_bytes=max_attachment_bytes,
                 message_limit=message_limit,
-                query=query,
+                query=gmail_filter.query,
+                label_ids=gmail_filter.canonical_label_ids,
                 resumed=resumed,
                 processing=processing,
                 errors=errors,
@@ -278,7 +286,8 @@ class FullMessageSnapshot:
                             download_attachments=download_attachments,
                             max_attachment_bytes=max_attachment_bytes,
                             message_limit=message_limit,
-                            query=query,
+                            query=gmail_filter.query,
+                            label_ids=gmail_filter.canonical_label_ids,
                             resumed=queue.loaded_existing or existing_started_at is not None,
                             errors=(issue,),
                         )
@@ -362,6 +371,7 @@ class FullMessageSnapshot:
         max_results: int,
         message_limit: int | None,
         query: str | None,
+        label_ids: Sequence[str],
     ) -> None:
         if message_limit is not None and len(queue.records) >= message_limit:
             queue.mark_discovery_complete()
@@ -377,6 +387,7 @@ class FullMessageSnapshot:
                 max_results=max_results,
                 include_spam_trash=include_spam_trash,
                 query=query,
+                label_ids=label_ids,
             )
             refs = _message_refs(page)
             if message_limit is not None:
@@ -423,6 +434,7 @@ class FullMessageSnapshot:
         max_attachment_bytes: int | None,
         message_limit: int | None,
         query: str | None,
+        label_ids: Sequence[str],
         resumed: bool,
         processing: MessageProcessingSummary | None = None,
         errors: tuple[ManifestIssue, ...] = (),
@@ -443,6 +455,7 @@ class FullMessageSnapshot:
             messages_failed=queue.failed_count,
             message_limit=message_limit,
             query=query,
+            label_ids=tuple(label_ids),
             mime_parts=processing.mime_parts if processing is not None else 0,
             mime_messages_processed=(
                 processing.mime_messages_processed if processing is not None else 0
