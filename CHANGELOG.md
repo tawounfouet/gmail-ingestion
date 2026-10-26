@@ -5,6 +5,78 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0b2 — 2026-10-26 — Relations & Thread Projection
+
+### Added
+
+- `LABEL_ADDED` materialization as an active current `message_labels` relation;
+- `LABEL_REMOVED` materialization as physical exclusion from the current relation set;
+- no orphan label relation when the referenced current message no longer exists;
+- `CURRENT_PROJECTION_TABLES` extending message projection with `threads`;
+- deterministic thread recomputation from current messages and recipients;
+- thread history frontier derived from current message/history events;
+- current thread removal when its last message disappears;
+- message-to-thread referential-integrity validation before projection publication;
+- logical digest extended to include relational/thread projection tables;
+- candidate/version Parquet persistence for the complete b2 table set;
+- counters for `LABEL_ADDED` and `LABEL_REMOVED`;
+- end-to-end test covering all four qualified Gmail History event classes in one projection.
+
+### Event coverage
+
+```text
+MESSAGE_ADDED      MATERIALIZED
+MESSAGE_DELETED    MATERIALIZED
+LABEL_ADDED        MATERIALIZED
+LABEL_REMOVED      MATERIALIZED
+```
+
+### Current-state flow
+
+```text
+normalized baseline
++
+ordered processed deltas
+        ↓
+message + relation reducer
+        ↓
+current messages / dependent rows
+        ↓
+thread recomputation
+        ↓
+referential validation
+        ↓
+logical digest
+        ↓
+READY candidate
+        ↓
+immutable version
+        ↓
+atomic current pointer
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Deferred to 0.5.0rc1
+
+- crash/recovery qualification across projection build and promotion boundaries;
+- explicit gap-detection qualification;
+- full rebuild command/path qualification;
+- incremental projection vs full rebuild digest equality qualification;
+- stale-writer and candidate-recovery stress qualification.
+
+
+
 ## 0.5.0b1 — 2026-10-26 — Message Delta Materialization
 
 ### Added

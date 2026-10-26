@@ -24,7 +24,12 @@ from gmail_ingestion.persistence import (
     NormalizedParquetWriter,
     RawMessageWriter,
 )
-from gmail_ingestion.projection import ProjectionFoundationService, ProjectionPlan, ProjectionStatus
+from gmail_ingestion.projection import (
+    CURRENT_PROJECTION_TABLES,
+    ProjectionFoundationService,
+    ProjectionPlan,
+    ProjectionStatus,
+)
 
 ACCOUNT_ID = "acct_0123456789abcdef01234567"
 BASELINE_RUN = UUID("00000000-0000-0000-0000-000000000701")
@@ -45,6 +50,7 @@ def _message(
     history_id: str,
     internal_date: str,
     subject: str,
+    label_ids: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "id": message_id,
@@ -53,7 +59,7 @@ def _message(
         "internalDate": internal_date,
         "snippet": subject,
         "sizeEstimate": 10,
-        "labelIds": [],
+        "labelIds": list(label_ids),
         "payload": {
             "partId": "",
             "mimeType": "text/plain",
@@ -78,9 +84,20 @@ def _seed_baseline(
         threads_total=len({str(message["threadId"]) for message in messages}),
         history_id="100",
     )
+    label_ids = sorted(
+        {
+            str(label_id)
+            for message in messages
+            for label_id in message.get("labelIds", [])
+        }
+    )
+    labels = [
+        {"id": label_id, "name": label_id, "type": "system"}
+        for label_id in label_ids
+    ]
     normalized = normalize_snapshot(
         account,
-        (),
+        labels,
         messages,
         ingested_at=T0,
         dataset_version="baseline-v1",
@@ -283,11 +300,11 @@ def test_unprocessed_event_is_rejected_fail_closed(tmp_path: Path) -> None:
     assert store.require_candidate(ACCOUNT_ID, plan.projection_id).state.status is ProjectionStatus.FAILED
 
 
-def test_label_event_is_explicitly_deferred_from_b1(tmp_path: Path) -> None:
+def test_label_added_upserts_current_relation(tmp_path: Path) -> None:
     baseline = [_message("m1", "t1", history_id="100", internal_date="1000", subject="one")]
-    _, store, service, plan = _service(tmp_path, messages=baseline)
+    _, _, service, plan = _service(tmp_path, messages=baseline)
     event = GmailHistoryEvent(
-        event_id="event-label",
+        event_id="event-label-add",
         account_id=ACCOUNT_ID,
         history_id="110",
         event_type=GmailHistoryEventType.LABEL_ADDED,
@@ -302,7 +319,172 @@ def test_label_event_is_explicitly_deferred_from_b1(tmp_path: Path) -> None:
         processing_status=HistoryProcessingStatus.PROCESSED,
     )
 
-    with pytest.raises(MessageProjectionMaterializationError, match="does not apply LABEL_ADDED"):
-        service.materialize(plan, [event])
+    result = service.materialize(plan, [event])
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
 
-    assert store.require_candidate(ACCOUNT_ID, plan.projection_id).state.status is ProjectionStatus.FAILED
+    assert result.labels_added == 1
+    assert rows["message_labels"] == [
+        {
+            "account_id": ACCOUNT_ID,
+            "message_id": "m1",
+            "label_id": "IMPORTANT",
+            "added_history_id": "110",
+            "removed_history_id": None,
+            "is_active": True,
+            "first_seen_at": T1,
+            "last_seen_at": T1,
+        }
+    ]
+
+
+def test_label_removed_physically_excludes_current_relation(tmp_path: Path) -> None:
+    baseline = [
+        _message(
+            "m1",
+            "t1",
+            history_id="100",
+            internal_date="1000",
+            subject="one",
+            label_ids=("INBOX",),
+        )
+    ]
+    _, _, service, plan = _service(tmp_path, messages=baseline)
+    event = GmailHistoryEvent(
+        event_id="event-label-remove",
+        account_id=ACCOUNT_ID,
+        history_id="110",
+        event_type=GmailHistoryEventType.LABEL_REMOVED,
+        message_id="m1",
+        thread_id="t1",
+        label_id="INBOX",
+        event_ordinal=0,
+        source_page_token=None,
+        observed_at=T1,
+        run_id=DELTA_RUN,
+        processed_at=T2,
+        processing_status=HistoryProcessingStatus.PROCESSED,
+    )
+
+    result = service.materialize(plan, [event])
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
+
+    assert result.labels_removed == 1
+    assert rows["message_labels"] == []
+
+
+def test_thread_projection_recomputes_after_message_addition(tmp_path: Path) -> None:
+    baseline = [_message("m1", "t1", history_id="100", internal_date="1000", subject="one")]
+    artifacts, _, service, plan = _service(tmp_path, messages=baseline)
+    added = _message("m2", "t1", history_id="110", internal_date="2000", subject="two")
+    RawMessageWriter(artifacts).write(DELTA_RUN, "m2", added)
+    event = _event("event-add-m2", GmailHistoryEventType.MESSAGE_ADDED, "m2", "110")
+
+    service.materialize(plan, [event])
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
+
+    assert len(rows["threads"]) == 1
+    thread = rows["threads"][0]
+    assert thread["thread_id"] == "t1"
+    assert thread["message_count"] == 2
+    assert thread["first_message_id"] == "m1"
+    assert thread["last_message_id"] == "m2"
+    assert thread["history_id"] == "110"
+
+
+def test_thread_projection_disappears_when_last_message_is_deleted(tmp_path: Path) -> None:
+    baseline = [_message("m1", "t1", history_id="100", internal_date="1000", subject="one")]
+    _, _, service, plan = _service(tmp_path, messages=baseline)
+    event = _event("event-delete-m1", GmailHistoryEventType.MESSAGE_DELETED, "m1", "120")
+
+    service.materialize(plan, [event])
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
+
+    assert rows["messages"] == []
+    assert rows["threads"] == []
+
+
+def test_all_four_incremental_event_classes_converge_in_current_projection(
+    tmp_path: Path,
+) -> None:
+    baseline = [
+        _message(
+            "m1",
+            "t1",
+            history_id="100",
+            internal_date="1000",
+            subject="one",
+            label_ids=("INBOX",),
+        )
+    ]
+    artifacts, _, service, plan = _service(tmp_path, messages=baseline)
+    added = _message("m2", "t1", history_id="110", internal_date="2000", subject="two")
+    RawMessageWriter(artifacts).write(DELTA_RUN, "m2", added)
+
+    events = [
+        GmailHistoryEvent(
+            event_id="event-label-add-m2",
+            account_id=ACCOUNT_ID,
+            history_id="111",
+            event_type=GmailHistoryEventType.LABEL_ADDED,
+            message_id="m2",
+            thread_id="t1",
+            label_id="IMPORTANT",
+            event_ordinal=0,
+            source_page_token=None,
+            observed_at=T1,
+            run_id=DELTA_RUN,
+            processed_at=T2,
+            processing_status=HistoryProcessingStatus.PROCESSED,
+        ),
+        _event("event-delete-m1", GmailHistoryEventType.MESSAGE_DELETED, "m1", "120"),
+        _event("event-add-m2", GmailHistoryEventType.MESSAGE_ADDED, "m2", "110"),
+        GmailHistoryEvent(
+            event_id="event-label-remove-m1",
+            account_id=ACCOUNT_ID,
+            history_id="112",
+            event_type=GmailHistoryEventType.LABEL_REMOVED,
+            message_id="m1",
+            thread_id="t1",
+            label_id="INBOX",
+            event_ordinal=0,
+            source_page_token=None,
+            observed_at=T1,
+            run_id=DELTA_RUN,
+            processed_at=T2,
+            processing_status=HistoryProcessingStatus.PROCESSED,
+        ),
+    ]
+
+    result = service.materialize(plan, events)
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
+
+    assert {row["message_id"] for row in rows["messages"]} == {"m2"}
+    assert {(row["message_id"], row["label_id"]) for row in rows["message_labels"]} == {
+        ("m2", "IMPORTANT")
+    }
+    assert rows["threads"][0]["message_count"] == 1
+    assert rows["threads"][0]["first_message_id"] == "m2"
+    assert result.messages_added == 1
+    assert result.messages_deleted == 1
+    assert result.labels_added == 1
+    assert result.labels_removed == 1

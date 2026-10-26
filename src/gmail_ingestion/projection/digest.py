@@ -15,10 +15,12 @@ from .message_delta import MESSAGE_PROJECTION_TABLES
 
 def logical_projection_digest(
     tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    table_names: Sequence[str] = MESSAGE_PROJECTION_TABLES,
 ) -> str:
     """Hash canonical logical rows independently of physical Parquet ordering."""
     canonical: dict[str, list[dict[str, Any]]] = {}
-    for name in MESSAGE_PROJECTION_TABLES:
+    for name in table_names:
         keys = TABLE_SORT_KEYS[name]
         rows = [
             {key: _json_value(value) for key, value in sorted(dict(row).items())}

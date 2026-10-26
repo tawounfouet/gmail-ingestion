@@ -50,9 +50,13 @@ class MessageProjectionReducer:
                         f"MESSAGE_DELETED {event.event_id} must not carry normalized rows"
                     )
                 self._remove_message(state, event.message_id)
+            elif event.event_type is GmailHistoryEventType.LABEL_ADDED:
+                self._add_label_relation(state, delta)
+            elif event.event_type is GmailHistoryEventType.LABEL_REMOVED:
+                self._remove_label_relation(state, delta)
             else:
                 raise MessageProjectionReductionError(
-                    f"Unsupported event type for 0.5.0b1: {event.event_type.value}"
+                    f"Unsupported projection event type: {event.event_type.value}"
                 )
 
         return _sort_tables(state), duplicates
@@ -74,6 +78,68 @@ class MessageProjectionReducer:
                 row for row in state[table_name] if row.get("message_id") != message_id
             ]
             state[table_name].extend(incoming)
+
+    @staticmethod
+    def _add_label_relation(
+        state: dict[str, list[dict[str, Any]]],
+        delta: PreparedMessageDelta,
+    ) -> None:
+        event = delta.event
+        if event.label_id is None:
+            raise MessageProjectionReductionError("LABEL_ADDED requires label_id")
+        if not any(row.get("message_id") == event.message_id for row in state["messages"]):
+            return
+        existing = next(
+            (
+                row
+                for row in state["message_labels"]
+                if row.get("message_id") == event.message_id
+                and row.get("label_id") == event.label_id
+            ),
+            None,
+        )
+        first_seen_at = (
+            existing.get("first_seen_at")
+            if existing is not None
+            else event.observed_at
+        )
+        state["message_labels"] = [
+            row
+            for row in state["message_labels"]
+            if not (
+                row.get("message_id") == event.message_id
+                and row.get("label_id") == event.label_id
+            )
+        ]
+        state["message_labels"].append(
+            {
+                "account_id": event.account_id,
+                "message_id": event.message_id,
+                "label_id": event.label_id,
+                "added_history_id": event.history_id,
+                "removed_history_id": None,
+                "is_active": True,
+                "first_seen_at": first_seen_at,
+                "last_seen_at": event.observed_at,
+            }
+        )
+
+    @staticmethod
+    def _remove_label_relation(
+        state: dict[str, list[dict[str, Any]]],
+        delta: PreparedMessageDelta,
+    ) -> None:
+        event = delta.event
+        if event.label_id is None:
+            raise MessageProjectionReductionError("LABEL_REMOVED requires label_id")
+        state["message_labels"] = [
+            row
+            for row in state["message_labels"]
+            if not (
+                row.get("message_id") == event.message_id
+                and row.get("label_id") == event.label_id
+            )
+        ]
 
     @staticmethod
     def _remove_message(
