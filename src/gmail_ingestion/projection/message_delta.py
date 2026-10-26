@@ -17,6 +17,8 @@ MESSAGE_PROJECTION_TABLES = (
     "attachments",
 )
 
+CURRENT_PROJECTION_TABLES = (*MESSAGE_PROJECTION_TABLES, "threads")
+
 
 @dataclass(frozen=True, slots=True)
 class PreparedMessageDelta:
@@ -39,3 +41,5 @@ class MessageProjectionResult:
     messages_deleted: int
     logical_digest: str
     row_counts: Mapping[str, int]
+    labels_added: int = 0
+    labels_removed: int = 0
