@@ -105,7 +105,7 @@ class MessageDeltaProjectionService:
                 digest,
                 duplicate_events_ignored=_duplicate_count(events),
             )
-        elif candidate.state.status is not ProjectionStatus.BUILDING:
+        else:
             raise MessageProjectionMaterializationError(
                 f"Projection candidate is not materializable from {candidate.state.status.value}"
             )
