@@ -174,6 +174,26 @@ class LocalProjectionDatasetStore:
         root = self.projection_store.candidate_data_dir(account_id, projection_id)
         return _read_projection_tables(root, table_names)
 
+    def read_candidate_manifest(
+        self,
+        account_id: str,
+        projection_id: str,
+    ) -> Mapping[str, Any] | None:
+        """Read complete candidate data evidence when present."""
+        if not self.projection_store.candidate_data_exists(account_id, projection_id):
+            return None
+        path = (
+            self.projection_store.candidate_data_dir(account_id, projection_id)
+            / "projection-data.json"
+        )
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProjectionDatasetError("candidate projection-data manifest is invalid") from exc
+        if not isinstance(payload, dict):
+            raise ProjectionDatasetError("candidate projection-data manifest must be an object")
+        return cast(Mapping[str, Any], payload)
+
     def read_version(
         self,
         account_id: str,

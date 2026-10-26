@@ -12,6 +12,17 @@ from gmail_ingestion.schemas import TABLE_SORT_KEYS
 
 from .message_delta import MESSAGE_PROJECTION_TABLES
 
+_NON_LOGICAL_FIELDS = frozenset(
+    {
+        "dataset_version",
+        "source_connector_version",
+        "ingested_at",
+        "updated_at",
+        "profile_fetched_at",
+        "downloaded_at",
+    }
+)
+
 
 def logical_projection_digest(
     tables: Mapping[str, Sequence[Mapping[str, Any]]],
@@ -23,7 +34,11 @@ def logical_projection_digest(
     for name in table_names:
         keys = TABLE_SORT_KEYS[name]
         rows = [
-            {key: _json_value(value) for key, value in sorted(dict(row).items())}
+            {
+                key: _json_value(value)
+                for key, value in sorted(dict(row).items())
+                if key not in _NON_LOGICAL_FIELDS
+            }
             for row in tables.get(name, ())
         ]
         rows.sort(

@@ -20,6 +20,13 @@ from .models import (
 )
 from .planner import ProjectionPlanner, ProjectionPlanningError
 from .ports import ProjectionStore
+from .reliability import (
+    ProjectionConvergenceError,
+    ProjectionConvergenceResult,
+    ProjectionDeltaBatch,
+    ProjectionGapError,
+    validate_delta_chain,
+)
 from .service import ProjectionFoundationService
 from .thread_reducer import ThreadProjectionError, recompute_threads
 from .validator import ProjectionValidationError, ProjectionValidator
@@ -33,7 +40,11 @@ __all__ = [
     "MessageProjectionReductionError",
     "MessageProjectionResult",
     "ProjectionCandidate",
+    "ProjectionConvergenceError",
+    "ProjectionConvergenceResult",
+    "ProjectionDeltaBatch",
     "ProjectionFoundationService",
+    "ProjectionGapError",
     "ProjectionIdentity",
     "ProjectionManifest",
     "ProjectionPlan",
@@ -48,4 +59,5 @@ __all__ = [
     "PreparedMessageDelta",
     "logical_projection_digest",
     "recompute_threads",
+    "validate_delta_chain",
 ]

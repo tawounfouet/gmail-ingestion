@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -80,6 +80,10 @@ class MessageDeltaProjectionService:
                 plan.projection_id,
                 started_at=plan.created_at,
             )
+        elif candidate.state.status is ProjectionStatus.BUILDING:
+            recovered = self._recover_complete_candidate(plan, events)
+            if recovered is not None:
+                return recovered
         elif candidate.state.status is ProjectionStatus.READY:
             rows = self.dataset_store.read_candidate(
                 plan.account_id,
@@ -101,18 +105,24 @@ class MessageDeltaProjectionService:
                 digest,
                 duplicate_events_ignored=_duplicate_count(events),
             )
-        elif candidate.state.status is not ProjectionStatus.BUILDING:
+        else:
             raise MessageProjectionMaterializationError(
                 f"Projection candidate is not materializable from {candidate.state.status.value}"
             )
 
         try:
             baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
+            starting_tables = self._incremental_starting_tables(plan, baseline.tables)
             prepared = [
-                self._prepare_delta(plan, baseline.account, event)
+                self._prepare_delta(
+                    plan,
+                    baseline.account,
+                    event,
+                    start_history_id=plan.input_checkpoint_history_id,
+                )
                 for event in events
             ]
-            rows, duplicates = self.reducer.reduce(baseline.tables, prepared)
+            rows, duplicates = self.reducer.reduce(starting_tables, prepared)
             rows["threads"] = recompute_threads(
                 plan.account_id,
                 rows["messages"],
@@ -148,13 +158,106 @@ class MessageDeltaProjectionService:
             row_counts=dict(write_result.row_counts),
         )
 
+    def _recover_complete_candidate(
+        self,
+        plan: ProjectionPlan,
+        events: Sequence[GmailHistoryEvent],
+    ) -> MessageProjectionResult | None:
+        """Recover a crash after complete candidate data write but before READY transition."""
+        manifest = self.dataset_store.read_candidate_manifest(
+            plan.account_id,
+            plan.projection_id,
+        )
+        if manifest is None:
+            return None
+        rows = self.dataset_store.read_candidate(
+            plan.account_id,
+            plan.projection_id,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+        digest = logical_projection_digest(
+            rows,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+        recorded_digest = manifest.get("logical_digest")
+        if not isinstance(recorded_digest, str) or recorded_digest != digest:
+            self._best_effort_fail(
+                plan,
+                "persisted candidate data digest does not match projection-data manifest",
+            )
+            raise MessageProjectionMaterializationError(
+                "persisted candidate data failed digest validation"
+            )
+        self.foundation.validate_candidate(
+            plan.account_id,
+            plan.projection_id,
+            logical_digest=digest,
+        )
+        return _result(
+            plan,
+            events,
+            rows,
+            digest,
+            duplicate_events_ignored=_duplicate_count(events),
+        )
+
+    def rebuild_digest(
+        self,
+        plan: ProjectionPlan,
+        events: Sequence[GmailHistoryEvent],
+        *,
+        start_history_id: str,
+    ) -> str:
+        """Recompute the target projection logically from the immutable normalized baseline."""
+        baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
+        prepared = [
+            self._prepare_delta(
+                plan,
+                baseline.account,
+                event,
+                start_history_id=start_history_id,
+            )
+            for event in events
+        ]
+        rows, _ = self.reducer.reduce(baseline.tables, prepared)
+        rows["threads"] = recompute_threads(
+            plan.account_id,
+            rows["messages"],
+            rows["message_recipients"],
+            events,
+        )
+        return logical_projection_digest(
+            rows,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+
+    def _incremental_starting_tables(
+        self,
+        plan: ProjectionPlan,
+        baseline_tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+        predecessor = plan.predecessor_projection_id
+        if predecessor is None:
+            return baseline_tables
+        return self.dataset_store.read_version(
+            plan.account_id,
+            predecessor,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+
     def _prepare_delta(
         self,
         plan: ProjectionPlan,
         account: GmailAccount,
         event: GmailHistoryEvent,
+        *,
+        start_history_id: str,
     ) -> PreparedMessageDelta:
-        _validate_event(plan, event)
+        _validate_event(
+            plan,
+            event,
+            start_history_id=start_history_id,
+        )
         if event.event_type in {
             GmailHistoryEventType.MESSAGE_DELETED,
             GmailHistoryEventType.LABEL_ADDED,
@@ -204,7 +307,12 @@ class MessageDeltaProjectionService:
             pass
 
 
-def _validate_event(plan: ProjectionPlan, event: GmailHistoryEvent) -> None:
+def _validate_event(
+    plan: ProjectionPlan,
+    event: GmailHistoryEvent,
+    *,
+    start_history_id: str,
+) -> None:
     if event.account_id != plan.account_id:
         raise MessageProjectionMaterializationError(
             "Projection event belongs to another Gmail account"
@@ -214,7 +322,7 @@ def _validate_event(plan: ProjectionPlan, event: GmailHistoryEvent) -> None:
             f"Projection requires committed PROCESSED history events: {event.event_id}"
         )
     try:
-        input_history = int(plan.input_checkpoint_history_id)
+        input_history = int(start_history_id)
         target_history = int(plan.projected_checkpoint_history_id)
         event_history = int(event.history_id)
     except ValueError as exc:
@@ -228,7 +336,7 @@ def _validate_event(plan: ProjectionPlan, event: GmailHistoryEvent) -> None:
     if not input_history < event_history <= target_history:
         raise MessageProjectionMaterializationError(
             f"Event history id {event.history_id} is outside projection frontier "
-            f"({plan.input_checkpoint_history_id}, {plan.projected_checkpoint_history_id}]"
+            f"({start_history_id}, {plan.projected_checkpoint_history_id}]"
         )
 
 
