@@ -70,7 +70,7 @@ def recompute_threads(
             for row in thread_messages
             if row.get("history_id") is not None
         ]
-        histories.extend(event_history.get(thread_id, ()))
+        histories.extend(event_history.get(thread_id, []))
         rows.append(
             {
                 "account_id": account_id,
