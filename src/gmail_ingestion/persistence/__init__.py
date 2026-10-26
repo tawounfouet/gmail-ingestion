@@ -20,6 +20,12 @@ from .incremental_mutation_writer import IncrementalMutationWriter
 from .labels_writer import LabelsParquetWriter, LabelsWriteResult
 from .message_analysis import MessageAnalysisWriter
 from .parquet import NormalizedParquetWriter, NormalizedParquetWriteResult
+from .projection_store import (
+    LocalProjectionStore,
+    ProjectionConflictError,
+    ProjectionNotFoundError,
+    ProjectionStoreError,
+)
 from .raw_labels import RawLabelsWriter
 from .raw_message_writer import RawMessageWriter
 
@@ -44,6 +50,10 @@ __all__ = [
     "MessageAnalysisWriter",
     "NormalizedParquetWriteResult",
     "NormalizedParquetWriter",
+    "ProjectionConflictError",
+    "ProjectionNotFoundError",
+    "ProjectionStoreError",
+    "LocalProjectionStore",
     "RawHistoryWriter",
     "RawLabelsWriter",
     "RawMessageWriter",
