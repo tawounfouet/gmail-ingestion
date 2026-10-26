@@ -8,6 +8,10 @@ from uuid import UUID
 import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
+from gmail_ingestion.application import (
+    MessageDeltaProjectionService,
+    MessageProjectionMaterializationError,
+)
 from gmail_ingestion.domain import (
     GmailAccount,
     GmailHistoryEvent,
@@ -20,12 +24,7 @@ from gmail_ingestion.persistence import (
     NormalizedParquetWriter,
     RawMessageWriter,
 )
-from gmail_ingestion.projection import (
-    MessageDeltaProjectionService,
-    MessageProjectionMaterializationError,
-    ProjectionFoundationService,
-    ProjectionStatus,
-)
+from gmail_ingestion.projection import ProjectionFoundationService, ProjectionPlan, ProjectionStatus
 
 ACCOUNT_ID = "acct_0123456789abcdef01234567"
 BASELINE_RUN = UUID("00000000-0000-0000-0000-000000000701")
@@ -128,7 +127,7 @@ def _service(
     LocalArtifactStore,
     LocalProjectionStore,
     MessageDeltaProjectionService,
-    object,
+    ProjectionPlan,
 ]:
     artifact_store = LocalArtifactStore(tmp_path / "artifacts")
     _seed_baseline(artifact_store, messages)
