@@ -39,10 +39,10 @@ def recompute_threads(
         if recipient.get("account_id") != account_id:
             raise ThreadProjectionError("recipient belongs to another account")
         message_id = _required_string(recipient.get("message_id"), "message_id")
-        thread_id = message_to_thread.get(message_id)
+        recipient_thread_id = message_to_thread.get(message_id)
         email = recipient.get("email_address")
-        if thread_id is not None and isinstance(email, str) and email:
-            participants[thread_id].add(email.lower())
+        if recipient_thread_id is not None and isinstance(email, str) and email:
+            participants[recipient_thread_id].add(email.lower())
 
     event_history: dict[str, list[str]] = defaultdict(list)
     event_times: list[datetime] = []
