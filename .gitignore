@@ -41,3 +41,9 @@ qualification/
 .gmail-ingestion-control/
 .gmail-ingestion-live-*/
 .gmail-ingestion-control-live-*/
+
+# v0.5 projection live qualification roots
+.gmail-ingestion-v050-live/
+.gmail-ingestion-v050-live-control/
+.gmail-ingestion-v050-live-projection/
+.gmail-ingestion-projection-qualification/
