@@ -10,6 +10,7 @@ from pyingestkit.artifacts.filesystem import LocalArtifactStore
 from gmail_ingestion.persistence.projection_batch_reader import LocalProjectionBatchReader
 from gmail_ingestion.persistence.projection_store import LocalProjectionStore
 from gmail_ingestion.projection import (
+    ProjectionDeltaBatch,
     ProjectionGapError,
     validate_delta_chain,
 )
@@ -161,12 +162,11 @@ class ProjectCurrentState:
 
 
 def _suffix_from_frontier(
-    batches: tuple[object, ...],
+    batches: tuple[ProjectionDeltaBatch, ...],
     frontier: str,
-) -> tuple[object, ...]:
+) -> tuple[ProjectionDeltaBatch, ...]:
     for index, batch in enumerate(batches):
-        input_history_id = getattr(batch, "input_history_id", None)
-        if input_history_id == frontier:
+        if batch.input_history_id == frontier:
             return batches[index:]
     raise ProjectionGapError(
         f"no committed delta batch continues current projection frontier {frontier!r}"
