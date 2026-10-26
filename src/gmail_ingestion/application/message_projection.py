@@ -25,6 +25,7 @@ from gmail_ingestion.persistence.projection_store import LocalProjectionStore
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
 from gmail_ingestion.projection.digest import logical_projection_digest
 from gmail_ingestion.projection.message_delta import (
+    CURRENT_PROJECTION_TABLES,
     MESSAGE_PROJECTION_TABLES,
     MessageProjectionResult,
     PreparedMessageDelta,
@@ -32,6 +33,7 @@ from gmail_ingestion.projection.message_delta import (
 from gmail_ingestion.projection.message_reducer import MessageProjectionReducer
 from gmail_ingestion.projection.models import ProjectionPlan, ProjectionStatus
 from gmail_ingestion.projection.service import ProjectionFoundationService
+from gmail_ingestion.projection.thread_reducer import recompute_threads
 
 
 class MessageProjectionMaterializationError(RuntimeError):
@@ -79,8 +81,15 @@ class MessageDeltaProjectionService:
                 started_at=plan.created_at,
             )
         elif candidate.state.status is ProjectionStatus.READY:
-            rows = self.dataset_store.read_candidate(plan.account_id, plan.projection_id)
-            digest = logical_projection_digest(rows)
+            rows = self.dataset_store.read_candidate(
+                plan.account_id,
+                plan.projection_id,
+                table_names=CURRENT_PROJECTION_TABLES,
+            )
+            digest = logical_projection_digest(
+                rows,
+                table_names=CURRENT_PROJECTION_TABLES,
+            )
             if candidate.state.logical_digest != digest:
                 raise MessageProjectionMaterializationError(
                     "READY projection candidate data does not match persisted logical digest"
@@ -104,12 +113,22 @@ class MessageDeltaProjectionService:
                 for event in events
             ]
             rows, duplicates = self.reducer.reduce(baseline.tables, prepared)
-            digest = logical_projection_digest(rows)
+            rows["threads"] = recompute_threads(
+                plan.account_id,
+                rows["messages"],
+                rows["message_recipients"],
+                events,
+            )
+            digest = logical_projection_digest(
+                rows,
+                table_names=CURRENT_PROJECTION_TABLES,
+            )
             write_result = self.dataset_store.write_candidate(
                 plan.account_id,
                 plan.projection_id,
                 rows,
                 logical_digest=digest,
+                table_names=CURRENT_PROJECTION_TABLES,
             )
         except (ProjectionDatasetError, MessageProjectionMaterializationError, ValueError) as exc:
             self._best_effort_fail(plan, str(exc))
@@ -136,12 +155,16 @@ class MessageDeltaProjectionService:
         event: GmailHistoryEvent,
     ) -> PreparedMessageDelta:
         _validate_event(plan, event)
-        if event.event_type is GmailHistoryEventType.MESSAGE_DELETED:
+        if event.event_type in {
+            GmailHistoryEventType.MESSAGE_DELETED,
+            GmailHistoryEventType.LABEL_ADDED,
+            GmailHistoryEventType.LABEL_REMOVED,
+        }:
             return PreparedMessageDelta(event=event)
 
         if event.event_type is not GmailHistoryEventType.MESSAGE_ADDED:
             raise MessageProjectionMaterializationError(
-                f"0.5.0b1 does not apply {event.event_type.value}"
+                f"Unsupported projection event {event.event_type.value}"
             )
 
         try:
@@ -236,7 +259,16 @@ def _result(
             for event in unique.values()
         ),
         logical_digest=digest,
-        row_counts=row_counts or {name: len(rows[name]) for name in MESSAGE_PROJECTION_TABLES},
+        row_counts=row_counts
+        or {name: len(rows[name]) for name in CURRENT_PROJECTION_TABLES},
+        labels_added=sum(
+            event.event_type is GmailHistoryEventType.LABEL_ADDED
+            for event in unique.values()
+        ),
+        labels_removed=sum(
+            event.event_type is GmailHistoryEventType.LABEL_REMOVED
+            for event in unique.values()
+        ),
     )
 
 
