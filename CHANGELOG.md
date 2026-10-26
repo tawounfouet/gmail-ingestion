@@ -5,6 +5,69 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0b1 — 2026-10-26 — Message Delta Materialization
+
+### Added
+
+- pure `MessageProjectionReducer` applying ordered `MESSAGE_ADDED` / `MESSAGE_DELETED` deltas;
+- deterministic History ordering by numeric `history_id`, event ordinal and deterministic event ID;
+- duplicate event suppression and idempotent replay;
+- `NormalizedBaselineReader` for normalized schema v1 Parquet baselines;
+- persisted RAW-only normalization path for `MESSAGE_ADDED` with **no Gmail API call**;
+- physical exclusion of `MESSAGE_DELETED` messages from the materialized current-state tables;
+- replacement/removal of message-dependent rows across:
+  `messages`, `message_headers`, `message_recipients`, `message_labels`,
+  `mime_parts` and `attachments`;
+- deterministic logical projection digest;
+- candidate Parquet projection persistence and projection-data manifest;
+- candidate data promotion into immutable projection versions before atomic `current.json` switch;
+- fail-closed handling for missing RAW, unprocessed events and out-of-frontier History events;
+- regression tests for addition, deletion, ordering, duplicate replay, immutable promotion and failure paths.
+
+### Message projection contract
+
+```text
+NORMALIZED BASELINE
+        +
+PROCESSED MESSAGE DELTAS
+        ↓
+deterministic reducer
+        ↓
+candidate current message state
+        ↓
+logical digest + validation
+        ↓
+READY
+        ↓
+immutable projection version
+        ↓
+atomic current pointer
+```
+
+### Event coverage in this beta
+
+```text
+MESSAGE_ADDED      MATERIALIZED
+MESSAGE_DELETED    MATERIALIZED
+LABEL_ADDED        deferred to 0.5.0b2
+LABEL_REMOVED      deferred to 0.5.0b2
+thread recompute   deferred to 0.5.0b2
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+
+
 ## 0.5.0a1 — 2026-10-26 — Projection Foundation
 
 ### Added

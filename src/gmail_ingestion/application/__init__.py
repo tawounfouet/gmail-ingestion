@@ -11,6 +11,10 @@ from .incremental_sync import (
 )
 from .labels import IngestLabels, LabelsIngestionResult
 from .message_processing import MessagePostProcessor, MessageProcessingSummary
+from .message_projection import (
+    MessageDeltaProjectionService,
+    MessageProjectionMaterializationError,
+)
 from .profile import GetMailboxProfile
 from .range_sync import RangeMessageSnapshot
 from .reliable_incremental import (
@@ -31,7 +35,9 @@ __all__ = [
     "IncrementalHistorySync",
     "IngestLabels",
     "LabelsIngestionResult",
+    "MessageDeltaProjectionService",
     "MessagePostProcessor",
+    "MessageProjectionMaterializationError",
     "MissingCommittedCheckpointError",
     "MessageProcessingSummary",
     "RangeMessageSnapshot",
