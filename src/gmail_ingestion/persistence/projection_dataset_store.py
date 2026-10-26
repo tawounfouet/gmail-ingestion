@@ -102,9 +102,14 @@ class LocalProjectionDatasetStore:
         tables: Mapping[str, Sequence[Mapping[str, Any]]],
         *,
         logical_digest: str,
+        table_names: Sequence[str] = MESSAGE_PROJECTION_TABLES,
     ) -> ProjectionDatasetWriteResult:
         """Persist a complete candidate message projection before control-plane validation."""
-        normalized = _validate_projection_tables(account_id, tables)
+        normalized = _validate_projection_tables(
+            account_id,
+            tables,
+            table_names=table_names,
+        )
         root = self.projection_store.candidate_data_dir(account_id, projection_id)
         normalized_dir = root / "normalized"
         normalized_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -112,7 +117,7 @@ class LocalProjectionDatasetStore:
         pa = importlib.import_module("pyarrow")
         pq = importlib.import_module("pyarrow.parquet")
 
-        for name in MESSAGE_PROJECTION_TABLES:
+        for name in table_names:
             contract = TABLE_CONTRACTS[name]
             rows = normalized[name]
             schema = pa.schema(
@@ -139,13 +144,13 @@ class LocalProjectionDatasetStore:
                 temp.unlink(missing_ok=True)
             paths[name] = path
 
-        row_counts = {name: len(normalized[name]) for name in MESSAGE_PROJECTION_TABLES}
+        row_counts = {name: len(normalized[name]) for name in table_names}
         manifest = {
             "projection_schema_version": "1",
             "normalized_schema_version": NORMALIZED_SCHEMA_VERSION,
             "account_id": account_id,
             "projection_id": projection_id,
-            "tables": list(MESSAGE_PROJECTION_TABLES),
+            "tables": list(table_names),
             "row_counts": row_counts,
             "logical_digest": logical_digest,
             "status": "CANDIDATE",
@@ -162,26 +167,33 @@ class LocalProjectionDatasetStore:
         self,
         account_id: str,
         projection_id: str,
+        *,
+        table_names: Sequence[str] = MESSAGE_PROJECTION_TABLES,
     ) -> dict[str, list[dict[str, Any]]]:
-        """Reload candidate message projection rows."""
+        """Reload candidate projection rows."""
         root = self.projection_store.candidate_data_dir(account_id, projection_id)
-        return _read_projection_tables(root)
+        return _read_projection_tables(root, table_names)
 
     def read_version(
         self,
         account_id: str,
         projection_id: str,
+        *,
+        table_names: Sequence[str] = MESSAGE_PROJECTION_TABLES,
     ) -> dict[str, list[dict[str, Any]]]:
-        """Reload immutable promoted message projection rows."""
+        """Reload immutable promoted projection rows."""
         root = self.projection_store.version_data_dir(account_id, projection_id)
-        return _read_projection_tables(root)
+        return _read_projection_tables(root, table_names)
 
 
-def _read_projection_tables(root: Path) -> dict[str, list[dict[str, Any]]]:
+def _read_projection_tables(
+    root: Path,
+    table_names: Sequence[str],
+) -> dict[str, list[dict[str, Any]]]:
     pa = importlib.import_module("pyarrow")
     pq = importlib.import_module("pyarrow.parquet")
     result: dict[str, list[dict[str, Any]]] = {}
-    for name in MESSAGE_PROJECTION_TABLES:
+    for name in table_names:
         path = root / "normalized" / f"{name}.parquet"
         if not path.is_file():
             raise ProjectionDatasetError(f"Missing projected table {name!r}")
@@ -193,11 +205,13 @@ def _read_projection_tables(root: Path) -> dict[str, list[dict[str, Any]]]:
 def _validate_projection_tables(
     account_id: str,
     tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    table_names: Sequence[str],
 ) -> dict[str, list[dict[str, Any]]]:
     normalized: dict[str, list[dict[str, Any]]] = {}
     message_ids: set[str] = set()
 
-    for name in MESSAGE_PROJECTION_TABLES:
+    for name in table_names:
         rows = [dict(row) for row in tables.get(name, ())]
         for row in rows:
             if row.get("account_id") != account_id:
@@ -217,14 +231,26 @@ def _validate_projection_tables(
                 for row in rows
             }
 
-    for name in MESSAGE_PROJECTION_TABLES:
-        if name == "messages":
+    for name in table_names:
+        if name in {"messages", "threads"}:
             continue
         for row in normalized[name]:
             message_id = _required_string(row, "message_id")
             if message_id not in message_ids:
                 raise ProjectionDatasetError(
                     f"{name} contains child row for missing message {message_id!r}"
+                )
+
+    if "threads" in normalized:
+        thread_ids = {
+            _required_string(row, "thread_id")
+            for row in normalized["threads"]
+        }
+        for row in normalized.get("messages", ()):
+            thread_id = _required_string(row, "thread_id")
+            if thread_id not in thread_ids:
+                raise ProjectionDatasetError(
+                    f"messages contains row for missing thread {thread_id!r}"
                 )
     return normalized
 
