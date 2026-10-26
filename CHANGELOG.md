@@ -5,6 +5,76 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0rc1 — 2026-10-26 — Projection Reliability & Rebuild Qualification
+
+### Reliability model
+
+- explicit `ProjectionDeltaBatch` contract for committed incremental frontier transitions;
+- delta-chain continuity validation without assuming Gmail `historyId` values are contiguous;
+- fail-closed `ProjectionGapError` when the batch chain does not start, connect or terminate at the requested frontier;
+- second-generation projection now starts from the immutable predecessor Current State rather than incorrectly restarting from the original baseline with only new deltas;
+- deterministic full-rebuild digest path from the normalized baseline and the complete committed delta chain;
+- `ProjectionConvergenceResult` proving incremental and rebuild logical equality;
+- fail-closed `ProjectionConvergenceError` on digest divergence;
+- logical digest excludes physical lineage/timing fields that do not define Gmail business state;
+- recovery of a complete `BUILDING` candidate from persisted Parquet + projection-data manifest without replaying RAW;
+- corrupt persisted candidate digest is rejected and the candidate is marked `FAILED`.
+
+### Central invariant
+
+```text
+logical_digest(
+    predecessor current state
+    + new committed deltas
+)
+==
+logical_digest(
+    normalized baseline
+    + complete committed delta chain
+)
+```
+
+at the same target Gmail History frontier.
+
+### Crash/recovery boundary
+
+```text
+write candidate Parquet tables
+        ↓
+write projection-data.json LAST
+        ↓
+crash may occur
+        ↓
+restart
+        ↓
+manifest present?
+   ├── no  → deterministic rebuild of candidate
+   └── yes → reload + digest validation
+                 ↓
+               READY
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Stable gate remaining after rc1
+
+- bounded real-mailbox projection qualification;
+- stable release evidence;
+- exact-main stable CI/rebuild;
+- version promotion to `0.5.0`.
+
+
+
 ## 0.5.0b2 — 2026-10-26 — Relations & Thread Projection
 
 ### Added
