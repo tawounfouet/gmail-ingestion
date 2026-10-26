@@ -16,6 +16,7 @@ def test_cli_help_exposes_gmail_commands() -> None:
     assert result.exit_code == 0
     assert "auth" in result.stdout
     assert "profile" in result.stdout
+    assert "project" in result.stdout
     assert "labels" in result.stdout
     assert "snapshot" in result.stdout
     assert "range" in result.stdout
@@ -78,3 +79,21 @@ def test_incremental_help_and_checkpoint_options_are_registered() -> None:
     assert "artifact_root" in parameter_names
     assert "max_results" in parameter_names
     assert "auto_full_resync" in parameter_names
+
+
+
+def test_project_help_and_projection_options_are_registered() -> None:
+    result = runner.invoke(app, ["project", "--help"])
+    assert result.exit_code == 0
+    assert result.exception is None
+
+    command = get_command(app)
+    project = command.commands["project"]
+    parameter_names = {parameter.name for parameter in project.params}
+    assert "account_id" in parameter_names
+    assert "baseline_run_id" in parameter_names
+    assert "delta_run_ids" in parameter_names
+    assert "baseline_dataset_version" in parameter_names
+    assert "artifact_root" in parameter_names
+    assert "projection_root" in parameter_names
+    assert "candidate_only" in parameter_names
