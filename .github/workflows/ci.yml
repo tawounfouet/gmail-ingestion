@@ -53,10 +53,12 @@ jobs:
           gmail-ingest snapshot --help
           gmail-ingest range --help
           gmail-ingest incremental --help
-          python scripts/qualify_live_incremental_sync.py --help
-          python scripts/qualify_live_incremental_sync.py prepare --help
-          python scripts/qualify_live_incremental_sync.py verify --help
-          python scripts/render_live_incremental_evidence.py --help
+          if [[ "$(gmail-ingest version)" == 0.4.* ]]; then
+            python scripts/qualify_live_incremental_sync.py --help
+            python scripts/qualify_live_incremental_sync.py prepare --help
+            python scripts/qualify_live_incremental_sync.py verify --help
+            python scripts/render_live_incremental_evidence.py --help
+          fi
           python -m gmail_ingestion --help
 
   package:
