@@ -488,3 +488,38 @@ def test_all_four_incremental_event_classes_converge_in_current_projection(
     assert result.messages_deleted == 1
     assert result.labels_added == 1
     assert result.labels_removed == 1
+
+
+def test_unavailable_added_message_is_safe_when_later_deleted(tmp_path: Path) -> None:
+    baseline = [_message("m1", "t1", history_id="100", internal_date="1000", subject="one")]
+    _, store, service, plan = _service(tmp_path, messages=baseline)
+    add_event = _event(
+        "event-add-unavailable",
+        GmailHistoryEventType.MESSAGE_ADDED,
+        "m2",
+        "110",
+        thread_id="t2",
+    )
+    delete_event = _event(
+        "event-delete-unavailable",
+        GmailHistoryEventType.MESSAGE_DELETED,
+        "m2",
+        "120",
+        thread_id="t2",
+    )
+
+    result = service.materialize(plan, [delete_event, add_event])
+    rows = service.dataset_store.read_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+        table_names=CURRENT_PROJECTION_TABLES,
+    )
+
+    assert result.messages_added == 1
+    assert result.messages_deleted == 1
+    assert {row["message_id"] for row in rows["messages"]} == {"m1"}
+    assert {row["thread_id"] for row in rows["threads"]} == {"t1"}
+    assert store.require_candidate(
+        ACCOUNT_ID,
+        plan.projection_id,
+    ).state.status is ProjectionStatus.READY
