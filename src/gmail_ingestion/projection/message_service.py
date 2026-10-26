@@ -6,9 +6,11 @@ from collections.abc import Sequence
 from typing import Any
 
 from pyingestkit.artifacts.base import ArtifactStore
+from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion._version import __version__
 from gmail_ingestion.domain import (
+    GmailAccount,
     GmailHistoryEvent,
     GmailHistoryEventType,
     HistoryProcessingStatus,
@@ -80,18 +82,24 @@ class MessageDeltaProjectionService:
                 raise MessageProjectionMaterializationError(
                     "READY projection candidate data does not match persisted logical digest"
                 )
-            return _result(plan, events, rows, digest, duplicate_events_ignored=0)
+            return _result(
+                plan,
+                events,
+                rows,
+                digest,
+                duplicate_events_ignored=_duplicate_count(events),
+            )
         elif candidate.state.status is not ProjectionStatus.BUILDING:
             raise MessageProjectionMaterializationError(
                 f"Projection candidate is not materializable from {candidate.state.status.value}"
             )
 
-        baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
-        prepared = [
-            self._prepare_delta(plan, baseline.account, event)
-            for event in events
-        ]
         try:
+            baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
+            prepared = [
+                self._prepare_delta(plan, baseline.account, event)
+                for event in events
+            ]
             rows, duplicates = self.reducer.reduce(baseline.tables, prepared)
             digest = logical_projection_digest(rows)
             write_result = self.dataset_store.write_candidate(
@@ -100,7 +108,7 @@ class MessageDeltaProjectionService:
                 rows,
                 logical_digest=digest,
             )
-        except (ProjectionDatasetError, ValueError) as exc:
+        except (ProjectionDatasetError, MessageProjectionMaterializationError, ValueError) as exc:
             self._best_effort_fail(plan, str(exc))
             raise MessageProjectionMaterializationError(str(exc)) from exc
 
@@ -121,7 +129,7 @@ class MessageDeltaProjectionService:
     def _prepare_delta(
         self,
         plan: ProjectionPlan,
-        account: Any,
+        account: GmailAccount,
         event: GmailHistoryEvent,
     ) -> PreparedMessageDelta:
         _validate_event(plan, event)
@@ -135,9 +143,7 @@ class MessageDeltaProjectionService:
 
         try:
             payload = self.raw_messages.read(event.run_id, event.message_id)
-        except (ValueError, Exception) as exc:
-            if isinstance(exc, MessageProjectionMaterializationError):
-                raise
+        except (StorageError, ValueError) as exc:
             raise MessageProjectionMaterializationError(
                 f"Persisted RAW message is required for MESSAGE_ADDED {event.message_id!r}"
             ) from exc
@@ -168,7 +174,7 @@ class MessageDeltaProjectionService:
                 plan.projection_id,
                 reason,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - failure evidence must not mask original error
             pass
 
 
@@ -229,3 +235,7 @@ def _result(
         logical_digest=digest,
         row_counts=row_counts or {name: len(rows[name]) for name in MESSAGE_PROJECTION_TABLES},
     )
+
+
+def _duplicate_count(events: Sequence[GmailHistoryEvent]) -> int:
+    return len(events) - len({event.event_id for event in events})
