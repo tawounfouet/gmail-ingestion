@@ -1,4 +1,4 @@
-"""Application service for 0.5.0b1 message delta materialization."""
+"""Application service for deterministic Gmail current-state materialization."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class MessageProjectionMaterializationError(RuntimeError):
 
 
 class MessageDeltaProjectionService:
-    """Materialize current message state from normalized baseline plus persisted message deltas."""
+    """Materialize current Gmail state from normalized baseline plus persisted deltas."""
 
     def __init__(
         self,
