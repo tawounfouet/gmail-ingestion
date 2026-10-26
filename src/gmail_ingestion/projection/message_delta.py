@@ -1,4 +1,4 @@
-"""Message-level projection delta contracts for 0.5.0b1."""
+"""Projection delta contracts for current-state materialization."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class PreparedMessageDelta:
 
 @dataclass(frozen=True, slots=True)
 class MessageProjectionResult:
-    """Outcome of one deterministic message-delta projection build."""
+    """Outcome of one deterministic current-state projection build."""
 
     projection_id: str
     input_history_id: str
