@@ -8,6 +8,7 @@ from .auth import auth_command
 from .incremental import incremental_command
 from .labels import labels_command
 from .profile import profile_command
+from .project import project_command
 from .range import range_command
 from .snapshot import snapshot_command
 
@@ -31,6 +32,7 @@ def version_command() -> None:
 
 app.command("auth")(auth_command)
 app.command("profile")(profile_command)
+app.command("project")(project_command)
 app.command("labels")(labels_command)
 app.command("snapshot")(snapshot_command)
 app.command("range")(range_command)

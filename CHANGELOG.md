@@ -5,6 +5,81 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0rc2 — 2026-10-26 — Projection Operationalization
+
+### Added
+
+- `LocalProjectionBatchReader` converting committed 0.4 incremental manifests + PROCESSED
+  History-event files into trusted `ProjectionDeltaBatch` instances;
+- fail-closed rejection of incomplete, uncommitted, wrong-account or inconsistent run evidence;
+- `ProjectCurrentState` use case consuming explicit ordered incremental run IDs;
+- automatic incremental suffix selection when a Current projection already exists;
+- mandatory full-chain rebuild qualification before every new projection promotion;
+- idempotent `already_current` behavior when the requested target is already published;
+- `gmail-ingest project` CLI;
+- `--candidate-only/--promote` publication control;
+- explicit `--baseline-run-id`, repeatable `--delta-run-id`, artifact root and projection root;
+- CI smoke coverage for the new project command.
+
+### Operational flow
+
+```text
+qualified normalized baseline run
++
+ordered committed incremental run IDs
+        ↓
+LocalProjectionBatchReader
+        ↓
+validate complete baseline→target chain
+        ↓
+select Current→target incremental suffix
+        ↓
+materialize incremental candidate
+        ↓
+full baseline→target rebuild proof
+        ↓
+logical digests equal
+        ↓
+promote atomically
+        ↓
+CURRENT
+```
+
+### Design boundary
+
+The project command does **not** call Gmail and does **not** require OAuth.
+
+```text
+0.4 capture artifacts
+        ↓
+0.5 materialization
+```
+
+remain separate concerns.
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Stable gate remaining
+
+- bounded real Gmail scenario producing qualified 0.4 artifacts;
+- `gmail-ingest project` against those real artifacts;
+- rebuild digest equality;
+- redacted release evidence;
+- stable version-only promotion to `0.5.0`;
+- exact-main stable CI and release artifacts.
+
+
+
 ## 0.5.0rc1 — 2026-10-26 — Projection Reliability & Rebuild Qualification
 
 ### Reliability model

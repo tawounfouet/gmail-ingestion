@@ -16,6 +16,7 @@ from .message_projection import (
     MessageProjectionMaterializationError,
 )
 from .profile import GetMailboxProfile
+from .project_current_state import ProjectCurrentState, ProjectCurrentStateResult
 from .projection_reliability import ProjectionReliabilityResult, ProjectionReliabilityService
 from .range_sync import RangeMessageSnapshot
 from .reliable_incremental import (
@@ -41,6 +42,8 @@ __all__ = [
     "MessageProjectionMaterializationError",
     "MissingCommittedCheckpointError",
     "MessageProcessingSummary",
+    "ProjectCurrentState",
+    "ProjectCurrentStateResult",
     "ProjectionReliabilityResult",
     "ProjectionReliabilityService",
     "RangeMessageSnapshot",
