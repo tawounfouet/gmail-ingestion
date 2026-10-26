@@ -9,7 +9,7 @@ from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION
 
 
 def test_projection_alpha_preserves_frozen_ingestion_contracts() -> None:
-    assert gmail_ingestion.__version__ == "0.5.0b1"
+    assert gmail_ingestion.__version__ == "0.5.0b2"
     assert NORMALIZED_SCHEMA_VERSION == "1"
     assert CHECKPOINT_SCHEMA_VERSION == "1"
     assert HISTORY_RECEIPT_SCHEMA_VERSION == "1"
