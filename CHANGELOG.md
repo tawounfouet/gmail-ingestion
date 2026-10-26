@@ -5,6 +5,54 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0rc3 — 2026-10-26 — Unavailable Add/Delete Race Hardening
+
+### Fixed
+
+- projection no longer fails when Gmail History contains a `MESSAGE_ADDED` whose full RAW message
+  is already unavailable **and** a later `MESSAGE_DELETED` for the same message exists in the
+  projected event chain;
+- the unavailable add is treated as a safe no-op only because the later delete proves the message
+  is absent from the target Current State;
+- `MESSAGE_ADDED` without persisted RAW and without a later matching delete remains fail-closed;
+- event ordering for this decision is deterministic by numeric `history_id`, event ordinal and
+  deterministic event ID;
+- regression coverage proves the final messages/threads Current State converges correctly.
+
+### Safety invariant
+
+```text
+MESSAGE_ADDED without RAW
+        +
+later MESSAGE_DELETED for same message
+        ↓
+safe skip of unavailable add
+        ↓
+delete reducer
+        ↓
+target Current State excludes message
+
+MESSAGE_ADDED without RAW
+        +
+no later matching delete
+        ↓
+FAIL CLOSED
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+
+
 ## 0.5.0rc2 — 2026-10-26 — Projection Operationalization
 
 ### Added
