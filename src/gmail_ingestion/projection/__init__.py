@@ -7,7 +7,6 @@ from .message_delta import (
     PreparedMessageDelta,
 )
 from .message_reducer import MessageProjectionReducer, MessageProjectionReductionError
-from .message_service import MessageDeltaProjectionService, MessageProjectionMaterializationError
 from .models import (
     PROJECTION_SCHEMA_VERSION,
     CurrentPointer,
@@ -27,8 +26,6 @@ __all__ = [
     "MESSAGE_PROJECTION_TABLES",
     "PROJECTION_SCHEMA_VERSION",
     "CurrentPointer",
-    "MessageDeltaProjectionService",
-    "MessageProjectionMaterializationError",
     "MessageProjectionReducer",
     "MessageProjectionReductionError",
     "MessageProjectionResult",
