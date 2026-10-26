@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -96,6 +97,22 @@ class LocalProjectionStore:
     def discard_candidate(self, account_id: str, projection_id: str) -> None:
         """Discard an unpublished candidate without affecting current or versioned projections."""
         self._candidate_path(account_id, projection_id).unlink(missing_ok=True)
+        shutil.rmtree(self._candidate_data_path(account_id, projection_id), ignore_errors=True)
+
+    def candidate_data_dir(self, account_id: str, projection_id: str) -> Path:
+        """Return/create the filesystem directory for candidate projection data."""
+        path = self._candidate_data_path(account_id, projection_id)
+        self._ensure_private_dir(path)
+        return path
+
+    def version_data_dir(self, account_id: str, projection_id: str) -> Path:
+        """Return the immutable promoted data directory for one projection version."""
+        path = self._version_data_path(account_id, projection_id)
+        if not path.exists():
+            raise ProjectionNotFoundError(
+                f"Projection data version {projection_id} does not exist for {account_id}"
+            )
+        return path
 
     def load_current(self, account_id: str) -> CurrentPointer | None:
         """Return the authoritative current projection pointer for an account."""
@@ -169,6 +186,8 @@ class LocalProjectionStore:
                 f"Projection version {projection_id} already exists with different content"
             )
 
+        self._promote_candidate_data(account_id, projection_id)
+
         promoted_timestamp = promoted_candidate.manifest.promoted_at
         if promoted_timestamp is None:
             raise ProjectionStoreError("Promoted projection version is missing promoted_at")
@@ -190,6 +209,28 @@ class LocalProjectionStore:
         )
         self._candidate_path(account_id, projection_id).unlink(missing_ok=True)
         return pointer
+
+    def _promote_candidate_data(self, account_id: str, projection_id: str) -> None:
+        source = self._candidate_data_path(account_id, projection_id)
+        target = self._version_data_path(account_id, projection_id)
+        if target.exists():
+            if source.exists():
+                raise ProjectionConflictError(
+                    f"Projection data version {projection_id} already exists"
+                )
+            return
+        if not source.exists():
+            return
+        self._ensure_private_dir(target.parent)
+        os.replace(source, target)
+
+    def _candidate_data_path(self, account_id: str, projection_id: str) -> Path:
+        _validate_projection_id(projection_id)
+        return self._projection_dir(account_id) / "candidate_data" / projection_id
+
+    def _version_data_path(self, account_id: str, projection_id: str) -> Path:
+        _validate_projection_id(projection_id)
+        return self._projection_dir(account_id) / "version_data" / projection_id
 
     def _candidate_path(self, account_id: str, projection_id: str) -> Path:
         _validate_projection_id(projection_id)
