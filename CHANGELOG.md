@@ -4,6 +4,72 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+
+## 0.5.0a1 — 2026-10-26 — Projection Foundation
+
+### Added
+
+- independent `projection_schema_version = 1`;
+- deterministic `ProjectionIdentity` derived from account, baseline, target History frontier and schema;
+- immutable `ProjectionPlan`, `ProjectionState`, `ProjectionManifest` and `CurrentPointer`;
+- explicit `NEW → BUILDING → READY` candidate lifecycle plus persisted `FAILED` state;
+- `ProjectionStore` port and atomic filesystem `LocalProjectionStore`;
+- account-scoped candidate persistence and immutable promoted projection versions;
+- atomic `current.json` publication after the immutable version is safely persisted;
+- predecessor-based compare-and-swap protection rejecting stale projection writers;
+- idempotent candidate creation and promotion recovery;
+- structural validation through `ProjectionValidator`;
+- orchestration through `ProjectionFoundationService`;
+- regression tests for deterministic identity, lifecycle, reload, atomic publication, failure,
+  continuity and stale-writer rejection.
+
+### Projection control-plane contract
+
+```text
+CURRENT
+   ↓
+plan
+   ↓
+create candidate
+   ↓
+BUILDING
+   ↓
+validate
+   ↓
+READY
+   ↓
+persist immutable version
+   ↓
+atomically replace current pointer
+   ↓
+NEW CURRENT
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+RAW message hydration          = format=full
+PyIngestKit                    = 2.1.0
+```
+
+### Deliberately deferred to 0.5.0b1 / 0.5.0b2
+
+This alpha does **not** yet apply Gmail business mutations to the materialized current state.
+
+```text
+MESSAGE_ADDED      → 0.5.0b1
+MESSAGE_DELETED    → 0.5.0b1
+LABEL_ADDED        → 0.5.0b2
+LABEL_REMOVED      → 0.5.0b2
+thread recompute   → 0.5.0b2
+```
+
+
 ## 0.4.0 — 2026-10-25 — Incremental Sync Stable
 
 ### Stable capability
