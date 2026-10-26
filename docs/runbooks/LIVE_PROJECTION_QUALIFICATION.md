@@ -24,7 +24,7 @@ message.
 Expected package line:
 
 ```text
-0.5.0rc2
+0.5.0rc3
 ```
 
 or stable promotion:
@@ -239,11 +239,11 @@ contains_oauth_secrets         false
 
 ## Stable promotion rule
 
-Do not promote `0.5.0rc2` to `0.5.0` until:
+Do not promote `0.5.0rc3` to `0.5.0` until:
 
 ```text
 automated CI                 PASS
-exact-main RC2 CI            PASS
+exact-main RC3 CI            PASS
 real Gmail bounded capture   PASS
 live projection gate         PASS
 redacted evidence reviewed   PASS
