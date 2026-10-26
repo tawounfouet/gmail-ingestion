@@ -105,6 +105,12 @@ class LocalProjectionStore:
         self._ensure_private_dir(path)
         return path
 
+    def candidate_data_exists(self, account_id: str, projection_id: str) -> bool:
+        """Return whether a candidate has a complete projection-data manifest."""
+        return (
+            self._candidate_data_path(account_id, projection_id) / "projection-data.json"
+        ).is_file()
+
     def version_data_dir(self, account_id: str, projection_id: str) -> Path:
         """Return the immutable promoted data directory for one projection version."""
         path = self._version_data_path(account_id, projection_id)
