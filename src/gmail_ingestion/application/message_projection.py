@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -80,6 +80,10 @@ class MessageDeltaProjectionService:
                 plan.projection_id,
                 started_at=plan.created_at,
             )
+        elif candidate.state.status is ProjectionStatus.BUILDING:
+            recovered = self._recover_complete_candidate(plan, events)
+            if recovered is not None:
+                return recovered
         elif candidate.state.status is ProjectionStatus.READY:
             rows = self.dataset_store.read_candidate(
                 plan.account_id,
@@ -154,6 +158,49 @@ class MessageDeltaProjectionService:
             row_counts=dict(write_result.row_counts),
         )
 
+    def _recover_complete_candidate(
+        self,
+        plan: ProjectionPlan,
+        events: Sequence[GmailHistoryEvent],
+    ) -> MessageProjectionResult | None:
+        """Recover a crash after complete candidate data write but before READY transition."""
+        manifest = self.dataset_store.read_candidate_manifest(
+            plan.account_id,
+            plan.projection_id,
+        )
+        if manifest is None:
+            return None
+        rows = self.dataset_store.read_candidate(
+            plan.account_id,
+            plan.projection_id,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+        digest = logical_projection_digest(
+            rows,
+            table_names=CURRENT_PROJECTION_TABLES,
+        )
+        recorded_digest = manifest.get("logical_digest")
+        if not isinstance(recorded_digest, str) or recorded_digest != digest:
+            self._best_effort_fail(
+                plan,
+                "persisted candidate data digest does not match projection-data manifest",
+            )
+            raise MessageProjectionMaterializationError(
+                "persisted candidate data failed digest validation"
+            )
+        self.foundation.validate_candidate(
+            plan.account_id,
+            plan.projection_id,
+            logical_digest=digest,
+        )
+        return _result(
+            plan,
+            events,
+            rows,
+            digest,
+            duplicate_events_ignored=_duplicate_count(events),
+        )
+
     def rebuild_digest(
         self,
         plan: ProjectionPlan,
@@ -187,8 +234,8 @@ class MessageDeltaProjectionService:
     def _incremental_starting_tables(
         self,
         plan: ProjectionPlan,
-        baseline_tables: Any,
-    ) -> Any:
+        baseline_tables: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
         predecessor = plan.predecessor_projection_id
         if predecessor is None:
             return baseline_tables
