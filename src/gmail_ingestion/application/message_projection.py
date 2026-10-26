@@ -113,15 +113,12 @@ class MessageDeltaProjectionService:
         try:
             baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
             starting_tables = self._incremental_starting_tables(plan, baseline.tables)
-            prepared = [
-                self._prepare_delta(
-                    plan,
-                    baseline.account,
-                    event,
-                    start_history_id=plan.input_checkpoint_history_id,
-                )
-                for event in events
-            ]
+            prepared = self._prepare_deltas(
+                plan,
+                baseline.account,
+                events,
+                start_history_id=plan.input_checkpoint_history_id,
+            )
             rows, duplicates = self.reducer.reduce(starting_tables, prepared)
             rows["threads"] = recompute_threads(
                 plan.account_id,
@@ -210,15 +207,12 @@ class MessageDeltaProjectionService:
     ) -> str:
         """Recompute the target projection logically from the immutable normalized baseline."""
         baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
-        prepared = [
-            self._prepare_delta(
-                plan,
-                baseline.account,
-                event,
-                start_history_id=start_history_id,
-            )
-            for event in events
-        ]
+        prepared = self._prepare_deltas(
+            plan,
+            baseline.account,
+            events,
+            start_history_id=start_history_id,
+        )
         rows, _ = self.reducer.reduce(baseline.tables, prepared)
         rows["threads"] = recompute_threads(
             plan.account_id,
@@ -244,6 +238,47 @@ class MessageDeltaProjectionService:
             predecessor,
             table_names=CURRENT_PROJECTION_TABLES,
         )
+
+    def _prepare_deltas(
+        self,
+        plan: ProjectionPlan,
+        account: GmailAccount,
+        events: Sequence[GmailHistoryEvent],
+        *,
+        start_history_id: str,
+    ) -> list[PreparedMessageDelta]:
+        ordered = sorted(events, key=_event_sort_key)
+        later_deleted: set[str] = set()
+        superseded_add_ids: set[str] = set()
+        for event in reversed(ordered):
+            if event.event_type is GmailHistoryEventType.MESSAGE_DELETED:
+                later_deleted.add(event.message_id)
+            elif (
+                event.event_type is GmailHistoryEventType.MESSAGE_ADDED
+                and event.message_id in later_deleted
+            ):
+                superseded_add_ids.add(event.event_id)
+
+        prepared: list[PreparedMessageDelta] = []
+        for event in ordered:
+            try:
+                prepared.append(
+                    self._prepare_delta(
+                        plan,
+                        account,
+                        event,
+                        start_history_id=start_history_id,
+                    )
+                )
+            except MessageProjectionMaterializationError as exc:
+                if (
+                    event.event_type is GmailHistoryEventType.MESSAGE_ADDED
+                    and event.event_id in superseded_add_ids
+                    and "Persisted RAW message is required" in str(exc)
+                ):
+                    continue
+                raise
+        return prepared
 
     def _prepare_delta(
         self,
@@ -382,3 +417,13 @@ def _result(
 
 def _duplicate_count(events: Sequence[GmailHistoryEvent]) -> int:
     return len(events) - len({event.event_id for event in events})
+
+
+def _event_sort_key(event: GmailHistoryEvent) -> tuple[int, int, str]:
+    try:
+        history = int(event.history_id)
+    except ValueError as exc:
+        raise MessageProjectionMaterializationError(
+            f"History id must be numeric: {event.history_id!r}"
+        ) from exc
+    return (history, event.event_ordinal, event.event_id)
