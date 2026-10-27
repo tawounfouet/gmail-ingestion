@@ -13,6 +13,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from pyingestkit.artifacts.base import ArtifactStore
+from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion.projection.message_delta import MESSAGE_PROJECTION_TABLES
 from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION, TABLE_CONTRACTS, TABLE_SORT_KEYS
@@ -143,7 +144,7 @@ class ProjectionBaselineParquetWriter:
                 manifest_path=artifact.local_path,
                 reused=False,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - persistence adapter boundary
             raise ProjectionBaselineWriteError(
                 f"Unable to materialize projection baseline for run {run_id}"
             ) from exc
@@ -161,7 +162,7 @@ class ProjectionBaselineParquetWriter:
             raw = self.store.read_bytes(
                 self.store.uri_for(self.job_id, run_id, "baseline_manifest.json")
             )
-        except Exception:
+        except StorageError:
             return None
         try:
             payload = json.loads(raw.decode("utf-8"))
@@ -204,6 +205,16 @@ class ProjectionBaselineParquetWriter:
                     f"Projection baseline row count for {name!r} is invalid"
                 )
             counts[name] = value
+        for name in _BASELINE_TABLES:
+            path = self.store.path_for(
+                self.job_id,
+                run_id,
+                f"normalized/{name}.parquet",
+            )
+            if not path.is_file():
+                raise ProjectionBaselineWriteError(
+                    f"Projection baseline manifest exists but {name!r} Parquet is missing"
+                )
         manifest_path = self.store.path_for(
             self.job_id,
             run_id,
