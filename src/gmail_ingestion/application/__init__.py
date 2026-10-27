@@ -3,6 +3,11 @@
 from .authenticate import AuthenticateMailbox
 from .filtered_sync import FilteredMessageSnapshot
 from .full_sync import FullMessageSnapshot, FullSnapshotResult
+from .bootstrap_projection_baseline import (
+    LegacyBaselineBootstrapError,
+    LegacyBaselineBootstrapResult,
+    LegacyRawBaselineBootstrapper,
+)
 from .incremental_sync import (
     FullResyncRequiredError,
     IncrementalHistoryResult,
@@ -33,6 +38,9 @@ __all__ = [
     "FullResyncRequiredError",
     "FullSnapshotRecoveryError",
     "GetMailboxProfile",
+    "LegacyBaselineBootstrapError",
+    "LegacyBaselineBootstrapResult",
+    "LegacyRawBaselineBootstrapper",
     "IncrementalHistoryResult",
     "IncrementalHistorySync",
     "IngestLabels",
