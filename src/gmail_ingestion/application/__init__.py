@@ -1,13 +1,13 @@
 """Application use cases."""
 
 from .authenticate import AuthenticateMailbox
-from .filtered_sync import FilteredMessageSnapshot
-from .full_sync import FullMessageSnapshot, FullSnapshotResult
 from .bootstrap_projection_baseline import (
     LegacyBaselineBootstrapError,
     LegacyBaselineBootstrapResult,
     LegacyRawBaselineBootstrapper,
 )
+from .filtered_sync import FilteredMessageSnapshot
+from .full_sync import FullMessageSnapshot, FullSnapshotResult
 from .incremental_sync import (
     FullResyncRequiredError,
     IncrementalHistoryResult,
