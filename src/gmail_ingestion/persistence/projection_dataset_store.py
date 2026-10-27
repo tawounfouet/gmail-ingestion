@@ -46,9 +46,16 @@ class ProjectionDatasetWriteResult:
 class NormalizedBaselineReader:
     """Read the stable normalized v1 baseline through the ArtifactStore abstraction."""
 
-    def __init__(self, store: ArtifactStore, *, job_id: str = "gmail.normalized") -> None:
+    def __init__(
+        self,
+        store: ArtifactStore,
+        *,
+        job_id: str = "gmail.normalized",
+        projection_baseline_job_id: str = "gmail.projection_baseline",
+    ) -> None:
         self.store = store
         self.job_id = job_id
+        self.projection_baseline_job_id = projection_baseline_job_id
 
     def read(self, run_id: UUID, account_id: str) -> ProjectionBaseline:
         """Load the baseline account plus message projection tables from Parquet."""
@@ -73,13 +80,25 @@ class NormalizedBaselineReader:
         return ProjectionBaseline(account=account, tables=tables)
 
     def _read_table(self, run_id: UUID, table_name: str) -> list[dict[str, Any]]:
-        relative_path = f"candidate/normalized/{table_name}.parquet"
+        primary_path = f"candidate/normalized/{table_name}.parquet"
+        fallback_path = f"normalized/{table_name}.parquet"
         try:
-            raw = self.store.read_bytes(self.store.uri_for(self.job_id, run_id, relative_path))
-        except StorageError as exc:
-            raise ProjectionDatasetError(
-                f"Missing normalized baseline table {table_name!r} for run {run_id}"
-            ) from exc
+            raw = self.store.read_bytes(
+                self.store.uri_for(self.job_id, run_id, primary_path)
+            )
+        except StorageError:
+            try:
+                raw = self.store.read_bytes(
+                    self.store.uri_for(
+                        self.projection_baseline_job_id,
+                        run_id,
+                        fallback_path,
+                    )
+                )
+            except StorageError as fallback_exc:
+                raise ProjectionDatasetError(
+                    f"Missing normalized baseline table {table_name!r} for run {run_id}"
+                ) from fallback_exc
         pa = importlib.import_module("pyarrow")
         pq = importlib.import_module("pyarrow.parquet")
         table = pq.read_table(pa.BufferReader(raw))

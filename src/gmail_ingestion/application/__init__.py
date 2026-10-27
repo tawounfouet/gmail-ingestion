@@ -1,6 +1,11 @@
 """Application use cases."""
 
 from .authenticate import AuthenticateMailbox
+from .bootstrap_projection_baseline import (
+    LegacyBaselineBootstrapError,
+    LegacyBaselineBootstrapResult,
+    LegacyRawBaselineBootstrapper,
+)
 from .filtered_sync import FilteredMessageSnapshot
 from .full_sync import FullMessageSnapshot, FullSnapshotResult
 from .incremental_sync import (
@@ -33,6 +38,9 @@ __all__ = [
     "FullResyncRequiredError",
     "FullSnapshotRecoveryError",
     "GetMailboxProfile",
+    "LegacyBaselineBootstrapError",
+    "LegacyBaselineBootstrapResult",
+    "LegacyRawBaselineBootstrapper",
     "IncrementalHistoryResult",
     "IncrementalHistorySync",
     "IngestLabels",

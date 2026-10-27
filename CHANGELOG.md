@@ -5,6 +5,49 @@ All notable changes to Gmail Ingestion are documented in this file.
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
 
+## 0.5.0rc4 — 2026-10-27 — Legacy RAW Baseline Bootstrap
+
+### Added
+
+- `gmail-ingest bootstrap-baseline` for completed 0.4 Full Snapshot artifacts;
+- local-only RAW → projection-baseline normalization with no Gmail message API calls;
+- streaming Parquet generation to avoid loading full-mailbox RAW into memory;
+- derived `gmail.projection_baseline` artifact namespace;
+- baseline completion manifest published after all required Parquet tables;
+- idempotent reuse of complete baseline evidence;
+- fail-closed validation for incomplete discovery, failed fetches, missing RAW and partial evidence;
+- `NormalizedBaselineReader` fallback from full `gmail.normalized` datasets to the derived
+  projection baseline;
+- compatibility tests proving a legacy RAW snapshot can feed the existing `project` reader.
+
+### Compatibility problem solved
+
+```text
+0.4 Full Snapshot recovery
+→ RAW Gmail snapshot + checkpoint
+→ no automatic gmail.normalized Parquet
+
+0.5 projection
+→ requires normalized baseline
+
+RC4
+→ derives projection-compatible normalized baseline locally
+→ reuses the existing Full Snapshot RAW
+```
+
+### Preserved contracts
+
+```text
+normalized_schema_version      = 1
+checkpoint_schema_version      = 1
+history_receipt_schema_version = 1
+projection_schema_version      = 1
+OAuth scope                    = gmail.readonly
+PyIngestKit                    = 2.1.0
+```
+
+
+
 ## 0.5.0rc3 — 2026-10-26 — Unavailable Add/Delete Race Hardening
 
 ### Fixed

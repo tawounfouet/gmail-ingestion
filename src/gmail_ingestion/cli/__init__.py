@@ -5,6 +5,7 @@ import typer
 from gmail_ingestion._version import __version__
 
 from .auth import auth_command
+from .bootstrap_baseline import bootstrap_baseline_command
 from .incremental import incremental_command
 from .labels import labels_command
 from .profile import profile_command
@@ -31,6 +32,7 @@ def version_command() -> None:
 
 
 app.command("auth")(auth_command)
+app.command("bootstrap-baseline")(bootstrap_baseline_command)
 app.command("profile")(profile_command)
 app.command("project")(project_command)
 app.command("labels")(labels_command)

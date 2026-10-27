@@ -17,7 +17,7 @@ from gmail_ingestion.application import ProjectCurrentState
 from gmail_ingestion.domain import GmailHistoryEventType
 from gmail_ingestion.persistence import LocalProjectionBatchReader, LocalProjectionStore
 
-_ALLOWED_VERSIONS = frozenset({"0.5.0rc3", "0.5.0"})
+_ALLOWED_VERSIONS = frozenset({"0.5.0rc4", "0.5.0"})
 _REQUIRED_EVENTS = frozenset(GmailHistoryEventType)
 
 
