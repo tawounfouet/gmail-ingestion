@@ -152,7 +152,7 @@ class ProjectionBaselineParquetWriter:
             for writer in writers.values():
                 try:
                     writer.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort cleanup after primary failure
                     pass
             for path in temp_paths.values():
                 path.unlink(missing_ok=True)
