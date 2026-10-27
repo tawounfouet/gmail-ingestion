@@ -20,12 +20,12 @@ from .incremental_mutation_writer import IncrementalMutationWriter
 from .labels_writer import LabelsParquetWriter, LabelsWriteResult
 from .message_analysis import MessageAnalysisWriter
 from .parquet import NormalizedParquetWriter, NormalizedParquetWriteResult
-from .projection_batch_reader import LocalProjectionBatchReader, ProjectionBatchReadError
 from .projection_baseline_writer import (
     ProjectionBaselineParquetWriter,
     ProjectionBaselineWriteError,
     ProjectionBaselineWriteResult,
 )
+from .projection_batch_reader import LocalProjectionBatchReader, ProjectionBatchReadError
 from .projection_dataset_store import (
     LocalProjectionDatasetStore,
     NormalizedBaselineReader,
