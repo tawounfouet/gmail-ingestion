@@ -15,6 +15,7 @@ from gmail_ingestion.domain import GmailAccount, MessageFetchStatus
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.persistence.projection_baseline_writer import (
     ProjectionBaselineParquetWriter,
+    ProjectionBaselineWriteError,
     ProjectionBaselineWriteResult,
 )
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
@@ -158,7 +159,7 @@ class LegacyRawBaselineBootstrapper:
                 dataset_version=str(snapshot_run_id),
                 source_connector_version=__version__,
             )
-        except (OSError, ValueError) as exc:
+        except (OSError, ProjectionBaselineWriteError, ValueError) as exc:
             raise LegacyBaselineBootstrapError(str(exc)) from exc
 
         if result.reused:
