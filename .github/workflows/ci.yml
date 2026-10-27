@@ -54,6 +54,7 @@ jobs:
           gmail-ingest range --help
           gmail-ingest incremental --help
           gmail-ingest project --help
+          gmail-ingest bootstrap-baseline --help
           python scripts/qualify_live_projection.py --help
           if [[ "$(gmail-ingest version)" == 0.4.* ]]; then
             python scripts/qualify_live_incremental_sync.py --help
