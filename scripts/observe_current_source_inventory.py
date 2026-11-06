@@ -256,6 +256,7 @@ def main() -> int:
             page_size=args.page_size,
             include_spam_trash=not args.exclude_spam_trash,
         )
+        report["account_id"] = args.account_id
         write_private_inventory(args.evidence_out, report)
     except InventoryIncompleteError as exc:
         # Only report known static diagnostic strings. Never interpolate
