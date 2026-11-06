@@ -249,3 +249,30 @@ def test_resume_rejects_changed_batch_size(tmp_path: Path) -> None:
             email_address="user@example.com",
             batch_size=2,
         )
+
+
+
+def test_baseline_account_frontier_loads_without_messages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _seed_snapshot(tmp_path / "artifacts")
+    LegacyRawBaselineBootstrapper(store).run(
+        account_id=ACCOUNT_ID,
+        snapshot_run_id=RUN_ID,
+        email_address="user@example.com",
+        batch_size=1,
+    )
+    reader = NormalizedBaselineReader(store)
+    original = reader._read_table
+    accessed: list[str] = []
+
+    def read_only_account(run_id: UUID, name: str) -> list[dict[str, object]]:
+        accessed.append(name)
+        assert name == "accounts"
+        return original(run_id, name)
+
+    monkeypatch.setattr(reader, "_read_table", read_only_account)
+    account = reader.read_account(RUN_ID, ACCOUNT_ID)
+    assert account.account_id == ACCOUNT_ID
+    assert account.history_id == "100"
+    assert accessed == ["accounts"]

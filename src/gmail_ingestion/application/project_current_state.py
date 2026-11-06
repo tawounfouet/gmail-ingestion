@@ -61,8 +61,10 @@ class ProjectCurrentState:
         candidate_only: bool = False,
     ) -> ProjectCurrentStateResult:
         """Materialize the latest explicit delta frontier and prove rebuild convergence."""
-        baseline = self.materializer.baseline_reader.read(baseline_run_id, account_id)
-        baseline_history_id = baseline.account.history_id
+        baseline_account = self.materializer.baseline_reader.read_account(
+            baseline_run_id, account_id
+        )
+        baseline_history_id = baseline_account.history_id
         if baseline_history_id is None:
             raise ProjectionGapError(
                 "normalized baseline must expose its Gmail history frontier"

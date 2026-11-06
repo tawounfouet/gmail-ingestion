@@ -4,6 +4,18 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.5.0rc7 - Indexed Current State Projection
+
+- Replace per-event, all-table list scans with message-id indexed delta reduction.
+- Preserve deterministic ordering and all four event-class semantics, including duplicates and missing-message cases.
+- Read only the baseline account row for frontier checks and before rebuild qualification.
+- Avoid loading an unused full baseline when applying a delta to a previous Current State.
+- Stream the canonical SHA-256 JSON digest without materializing an entire multi-million-row JSON payload.
+- Test exact equality with the original reducer and the original JSON digest implementation.
+- Stable promotion remains blocked pending real-mailbox projection and rebuild evidence.
+
+
+
 ## 0.5.0rc6 - Resumable Segmented Baseline
 
 - Replace the legacy full-run temporary Parquet writers used by bootstrap with bounded, durable segment commits.

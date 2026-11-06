@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from pyingestkit.artifacts.base import ArtifactStore
@@ -24,6 +24,7 @@ from gmail_ingestion.persistence.projection_dataset_store import (
 from gmail_ingestion.persistence.projection_store import LocalProjectionStore
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
 from gmail_ingestion.projection.digest import logical_projection_digest
+from gmail_ingestion.projection.indexed_message_reducer import IndexedMessageProjectionReducer
 from gmail_ingestion.projection.message_delta import (
     CURRENT_PROJECTION_TABLES,
     MESSAGE_PROJECTION_TABLES,
@@ -57,7 +58,7 @@ class MessageDeltaProjectionService:
         self.foundation = ProjectionFoundationService(projection_store)
         self.baseline_reader = baseline_reader or NormalizedBaselineReader(artifact_store)
         self.dataset_store = dataset_store or LocalProjectionDatasetStore(projection_store)
-        self.reducer = reducer or MessageProjectionReducer()
+        self.reducer = reducer or IndexedMessageProjectionReducer()
         self.raw_messages = RawMessageWriter(artifact_store)
 
     def materialize(
@@ -111,11 +112,22 @@ class MessageDeltaProjectionService:
             )
 
         try:
-            baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
-            starting_tables = self._incremental_starting_tables(plan, baseline.tables)
+            if plan.predecessor_projection_id is None:
+                baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
+                starting_tables = baseline.tables
+                account = baseline.account
+            else:
+                account = self.baseline_reader.read_account(
+                    plan.baseline_run_id, plan.account_id
+                )
+                starting_tables = self.dataset_store.read_version(
+                    plan.account_id,
+                    plan.predecessor_projection_id,
+                    table_names=CURRENT_PROJECTION_TABLES,
+                )
             prepared = self._prepare_deltas(
                 plan,
-                baseline.account,
+                account,
                 events,
                 start_history_id=plan.input_checkpoint_history_id,
             )
@@ -222,20 +234,6 @@ class MessageDeltaProjectionService:
         )
         return logical_projection_digest(
             rows,
-            table_names=CURRENT_PROJECTION_TABLES,
-        )
-
-    def _incremental_starting_tables(
-        self,
-        plan: ProjectionPlan,
-        baseline_tables: Mapping[str, Sequence[Mapping[str, Any]]],
-    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
-        predecessor = plan.predecessor_projection_id
-        if predecessor is None:
-            return baseline_tables
-        return self.dataset_store.read_version(
-            plan.account_id,
-            predecessor,
             table_names=CURRENT_PROJECTION_TABLES,
         )
 
