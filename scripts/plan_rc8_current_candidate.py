@@ -250,6 +250,12 @@ def build_candidate_plan(
             "No message content, label or MIME correctness is claimed."
         ),
         "private_exception_ledger": missing,
+        "private_recovery_required_ids": sorted(
+            source_only | {
+                item["message_id"] for item in missing
+                if item["status"] == "SOURCE_PRESENT_ORIGINAL_RAW_MISSING"
+            }
+        ),
     }
 
 
@@ -275,7 +281,7 @@ def main() -> int:
     except (OSError, ValueError, RuntimeError, TypeError, KeyError) as exc:
         print("RC8 CANDIDATE FAILED: exception_type=" + type(exc).__name__)
         return 2
-    public = {k: v for k, v in plan.items() if k != "private_exception_ledger"}
+    public = {k: v for k, v in plan.items() if not k.startswith("private_")}
     print(json.dumps(public, indent=2, sort_keys=True))
     return 0
 
