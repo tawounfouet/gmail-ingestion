@@ -16,6 +16,7 @@ from uuid import UUID
 
 from probe_missing_added_raw_live import unresolved_ids
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
+from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
 
@@ -120,7 +121,7 @@ def compare(
         try:
             old = writer.read(first_run_id, message_id)
             new = writer.read(second_run_id, message_id)
-        except (OSError, ValueError) as exc:
+        except (OSError, StorageError, ValueError) as exc:
             raise RecoveryComparisonError(
                 "Captured message evidence is missing or invalid"
             ) from exc
