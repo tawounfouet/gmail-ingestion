@@ -109,7 +109,7 @@ def test_identical_full_captures_and_no_writes(
     assert before == after
 
 
-def test_changed_headers_or_labels_detected_without_identifiers(
+def test_changed_labels_detected_without_identifiers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, module: Any
 ) -> None:
     root = tmp_path / "artifacts"
@@ -133,7 +133,7 @@ def test_completed_manifest_without_raw_fails_closed(
     monkeypatch.setattr(
         module, "unresolved_ids", lambda *_args: ({"m1", "m2", "m3"}, 3, TARGET)
     )
-    with pytest.raises((module.RecoveryComparisonError, Exception)):
+    with pytest.raises(module.RecoveryComparisonError, match="missing or invalid"):
         _run(module, root)
 
 
