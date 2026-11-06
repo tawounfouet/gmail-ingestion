@@ -17,8 +17,8 @@ from gmail_ingestion.persistence.projection_baseline_writer import (
     ProjectionBaselineWriteError,
     ProjectionBaselineWriteResult,
 )
-from gmail_ingestion.persistence.resumable_baseline_writer import ResumableProjectionBaselineWriter
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
+from gmail_ingestion.persistence.resumable_baseline_writer import ResumableProjectionBaselineWriter
 from gmail_ingestion.projection.message_delta import MESSAGE_PROJECTION_TABLES
 
 ProgressCallback = Callable[[int, int], None]
