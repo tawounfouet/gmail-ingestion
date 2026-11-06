@@ -64,9 +64,7 @@ def test_history_activity_no_change(module: Any) -> None:
 
 
 def test_history_activity_page_cap_fails_closed(module: Any) -> None:
-    with pytest.raises(module.HistoryActivityIncompleteError if hasattr(
-        module, "HistoryActivityIncompleteError"
-    ) else module.HistoryActivityIncomplete, match="page cap"):
+    with pytest.raises(module.HistoryActivityIncomplete, match="page cap"):
         module.diagnose_history(
             FakeHistory([{"historyId": "101", "nextPageToken": "p2"}]),
             start_history_id="100",
