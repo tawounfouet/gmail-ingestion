@@ -58,8 +58,8 @@ class NormalizedBaselineReader:
         self.job_id = job_id
         self.projection_baseline_job_id = projection_baseline_job_id
 
-    def read(self, run_id: UUID, account_id: str) -> ProjectionBaseline:
-        """Load the baseline account plus message projection tables from Parquet."""
+    def read_account(self, run_id: UUID, account_id: str) -> GmailAccount:
+        """Read only the accounts table, avoiding all message-level Parquet files."""
         accounts = self._read_table(run_id, "accounts")
         matching = [row for row in accounts if row.get("account_id") == account_id]
         if len(matching) != 1:
@@ -74,6 +74,11 @@ class NormalizedBaselineReader:
             threads_total=_optional_int(account_row.get("threads_total")),
             history_id=_optional_string(account_row.get("history_id")),
         )
+        return account
+
+    def read(self, run_id: UUID, account_id: str) -> ProjectionBaseline:
+        """Load the baseline account plus message projection tables from Parquet."""
+        account = self.read_account(run_id, account_id)
         tables = {
             name: self._read_table(run_id, name)
             for name in MESSAGE_PROJECTION_TABLES
