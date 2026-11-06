@@ -48,7 +48,7 @@ def _event(
 def test_missing_raw_requires_a_later_committed_delete(module: Any) -> None:
     events = [
         _event("erased", GmailHistoryEventType.MESSAGE_ADDED, "100"),
-        _event("unresolved", GmailHistoryEventType.MESSAGE_ADDED, "101"),
+        _event("private-missing-id", GmailHistoryEventType.MESSAGE_ADDED, "101"),
         _event("erased", GmailHistoryEventType.MESSAGE_DELETED, "102"),
         _event("with-raw", GmailHistoryEventType.MESSAGE_ADDED, "103"),
     ]
@@ -62,7 +62,7 @@ def test_missing_raw_requires_a_later_committed_delete(module: Any) -> None:
     }
     printable = json.dumps(summary)
     assert "erased" not in printable
-    assert "unresolved" not in printable
+    assert "private-missing-id" not in printable
     assert "with-raw" not in printable
 
 
