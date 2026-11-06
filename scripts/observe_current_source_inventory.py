@@ -158,7 +158,7 @@ def observe_inventory(
 
     ordered = sorted(ids)
     digest = hashlib.sha256(
-        ("\\n".join(ordered) + "\\n").encode("utf-8")
+        ("\n".join(ordered) + "\n").encode("utf-8")
     ).hexdigest()
     return {
         "schema_version": 1,
@@ -189,7 +189,7 @@ def write_private_inventory(path: Path, inventory: Mapping[str, object]) -> None
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as output:
         json.dump(inventory, output, sort_keys=True, indent=2)
-        output.write("\\n")
+        output.write("\n")
 
 
 def main() -> int:
