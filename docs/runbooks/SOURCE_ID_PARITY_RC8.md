@@ -176,3 +176,54 @@ projection explicitly models those transitions with source provenance.
 Do not subtract the earlier 181,200 from the second inventory count as if
 both observations had the same History frontier. No full snapshot,
 bulk projection or stable promotion is authorized by these diagnostics.
+
+
+## 2026-11-06 - Excluded-scope inventory failed closed
+
+The operator retried `--exclude-spam-trash` with the original
+177,546-message baseline scope. The command returned
+`InventoryIncompleteError` without creating a completed inventory.
+The previous CLI printed only the exception type, so the precise cause
+**cannot be inferred from that output**. The 181,200-ID all-mail
+inventory is still valid evidence at its own observed frontier.
+
+A new safe diagnostic gives a fixed, redacted reason code for incomplete
+scoped inventories. Rather than immediately rescan ~360 message pages,
+first run a lightweight History-only analysis from the last established
+source frontier:
+
+```bash
+git switch main
+git pull --ff-only
+GMAIL_PY="/opt/homebrew/opt/python@3.14/bin/python3.14"
+
+env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/diagnose_scoped_history_activity.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --start-history-id 15904124 \
+  --max-pages 50 \
+  --page-size 500
+```
+
+This read-only diagnostic does **not** enumerate messages, modify the
+source, persist History, or advance the local checkpoint. Its public
+output contains only aggregate change counts. It does not reconstruct
+the exact failed scan window, but shows whether the mailbox has active
+message additions or SPAM/TRASH membership transitions since the first
+successful observation. Avoid treating History ID differences as event
+counts.
+
+If the run succeeds, investigate the reported activity before deciding
+whether another scoped 360-page inventory is worthwhile. A future
+`--exclude-spam-trash` retry now reveals a fixed diagnostic reason if
+it fails closed again. Never turn off the race checks to force a PASS.
+
+### Why this is not yet Current State parity
+
+The original ingestion baseline excluded Spam/Trash, but subsequent
+label changes can move messages into or out of that discovery scope.
+An ID-only History delta reducer that handles only `MESSAGE_ADDED`
+and `MESSAGE_DELETED` cannot safely model those transitions. A
+scoped projection must incorporate Gmail label membership and source
+frontier consistency. The existing strict historical RAW gap remains,
+and the Current pointer must not be promoted.

@@ -257,6 +257,27 @@ def main() -> int:
             include_spam_trash=not args.exclude_spam_trash,
         )
         write_private_inventory(args.evidence_out, report)
+    except InventoryIncompleteError as exc:
+        # Only report known static diagnostic strings. Never interpolate
+        # message IDs, Gmail payloads, or untrusted exception content.
+        allowed_reasons = {
+            "Message inventory page cap reached",
+            "History catchup page cap reached",
+            "Message added during scoped inventory; source labels unknown",
+            "Spam/Trash membership changed during scoped inventory",
+            "Source pagination token is invalid or repeated",
+            "Source messages list is malformed",
+            "History response predates listing start",
+            "History records list is malformed",
+            "History record is malformed",
+            "History event outside observation range",
+        }
+        reason = str(exc)
+        if reason not in allowed_reasons:
+            reason = "Source inventory consistency check failed"
+        print("SOURCE INVENTORY INCOMPLETE: reason=" + reason)
+        print("source_inventory_written: false")
+        return 3
     except (
         OSError,
         ValueError,
