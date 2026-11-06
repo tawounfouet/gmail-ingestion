@@ -17,14 +17,13 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from observe_current_source_inventory import write_private_inventory
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api import GmailApiClient, GmailApiError, GmailHistoryExpiredError
 from gmail_ingestion.auth import GmailAuthError, build_provider
 from gmail_ingestion.config import default_credential_dir
 from gmail_ingestion.persistence import RawMessageWriter
-
-from observe_current_source_inventory import write_private_inventory
 
 
 class SourceCaptureError(RuntimeError):
