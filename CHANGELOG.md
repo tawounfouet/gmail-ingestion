@@ -4,6 +4,18 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.5.0rc6 - Resumable Segmented Baseline
+
+- Replace the legacy full-run temporary Parquet writers used by bootstrap with bounded, durable segment commits.
+- Each segment writes all six message-level normalized Parquet tables, records SHA-256 hashes and counts, then atomically publishes its segment manifest.
+- On restart, validate previously committed segment integrity and metadata; normalize only uncommitted ranges.
+- Publish accounts and the final baseline manifest only after all segments are complete; reject gaps, altered batch sizes and corrupted Parquet.
+- Teach the projection baseline reader to consume a completed segmented baseline without assembling duplicate physical files.
+- Keep the original 0.4 RAW snapshot immutable and all Gmail History/checkpoint/schema/OAuth contracts unchanged.
+- Qualify interrupted-run recovery, segment corruption fail-closed and resumed reader round-trip.
+
+
+
 ## 0.5.0rc5 - Malformed MIME Header Normalization
 
 - Align normalized `message_headers` processing with the MIME analyzer's existing tolerant individual-header parser.
