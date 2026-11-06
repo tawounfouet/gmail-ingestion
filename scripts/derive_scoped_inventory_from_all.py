@@ -9,17 +9,18 @@ re-scan. A History change during the label-list observation fails closed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
+from compare_source_inventory_ids import read_source_ids
+from observe_current_source_inventory import write_private_inventory
+
 from gmail_ingestion.api import GmailApiClient, GmailApiError, GmailHistoryExpiredError
 from gmail_ingestion.auth import GmailAuthError, build_provider
 from gmail_ingestion.config import default_credential_dir
-
-from compare_source_inventory_ids import read_source_ids
-from observe_current_source_inventory import write_private_inventory
 
 
 class SourceReconciliationError(RuntimeError):
@@ -228,8 +229,6 @@ def derive_inventory(
     scoped = sorted(all_ids - spam_ids - trash_ids)
     # Both source and prior inventory hashes are included in the private
     # evidence. Public stdout removes the message IDs.
-    import hashlib
-
     digest = hashlib.sha256(("\n".join(scoped) + "\n").encode("utf-8")).hexdigest()
     return {
         "schema_version": 1,
