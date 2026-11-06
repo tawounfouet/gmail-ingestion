@@ -14,10 +14,15 @@ from typing import Any
 from gmail_ingestion.domain import GmailHistoryEventType
 
 from .message_delta import MESSAGE_PROJECTION_TABLES, PreparedMessageDelta
-from .message_reducer import MessageProjectionReductionError, _delta_sort_key, _sort_tables
+from .message_reducer import (
+    MessageProjectionReducer,
+    MessageProjectionReductionError,
+    _delta_sort_key,
+    _sort_tables,
+)
 
 
-class IndexedMessageProjectionReducer:
+class IndexedMessageProjectionReducer(MessageProjectionReducer):
     """Apply Gmail History deltas to per-message indexes, preserving v1 semantics."""
 
     def reduce(
