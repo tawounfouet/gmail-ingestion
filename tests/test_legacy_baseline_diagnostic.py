@@ -13,6 +13,7 @@ from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.control import MessageDiscoveryQueue
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/diagnose_legacy_baseline.py"
 
 ACCOUNT_ID = "acct_0123456789abcdef01234567"
