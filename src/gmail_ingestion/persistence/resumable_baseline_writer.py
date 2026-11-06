@@ -192,10 +192,13 @@ class ResumableProjectionBaselineWriter:
                 row_counts=counts, manifest_path=final_path, reused=False,
             )
         except Exception as exc:  # noqa: BLE001 - persistence boundary, safe metadata only
+            safe_reason = (
+                f", reason={exc}" if isinstance(exc, ProjectionBaselineWriteError) else ""
+            )
             raise ProjectionBaselineWriteError(
                 f"Resumable baseline failed (stage={stage}, committed_segments={completed_segments}, "
                 f"committed_messages={min(completed_segments * batch_size, total_messages)}, "
-                f"exception_type={type(exc).__name__})"
+                f"exception_type={type(exc).__name__}{safe_reason})"
             ) from exc
 
     @staticmethod
