@@ -271,3 +271,78 @@ pas lancer un nouveau Full Snapshot automatique.
 Une fois la source correctement réalignée, la capture actuelle reste
 soumise à ses propres vérifications fail-closed. Même un diagnostic PASS
 n'est pas une qualification de projection ni une décision de release.
+
+
+## 2026-11-07 - Deux 404 sans suppression History : audit list/get indépendant
+
+Le diagnostic local du candidat `rc8_7ddada510a3242aebb7d54b77c830a46`
+sur les 50 RAW attendus donne **48 accessibles**, **2 HTTP 404**, aucune
+mutation de ces IDs dans History entre `15906422` et `15907574`,
+aucune suppression `messagesDeleted` pour ces deux IDs dans cette plage.
+Cela ne prouve PAS que les deux messages ont été supprimés.
+
+Une nouvelle dérivation depuis l'ancien inventaire all-mail est
+**insuffisante** : en l'absence de delete History, elle continuerait
+à inclure les deux IDs d'origine, même si Gmail ne les liste plus.
+
+### 1. Réobservations de tous les IDs (sans corps d'e-mail)
+
+```bash
+git switch main
+git pull --ff-only
+GMAIL_PY="/opt/homebrew/opt/python@3.14/bin/python3.14"
+PRIV="$HOME/.local/share/gmail-ingestion-private"
+PLAN="$(ls -1t "$PRIV"/rc8-plan-*.json | head -n 1)"
+NEW_ALL="$PRIV/source-recheck-$(date -u +%Y%m%dT%H%M%SZ).json"
+
+caffeinate -i env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/observe_current_source_inventory.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --evidence-out "$NEW_ALL" \
+  --max-message-pages 1000 \
+  --max-history-pages 200 \
+  --page-size 500
+```
+
+Cette observation `include_spam_trash=true` énumère environ 363 pages
+de références d'IDs, pas 181k RAW. Elle crée une nouvelle preuve privée
+liée explicitement à l'account ID, en préservant les inventaires d'origine.
+
+### 2. Comparer la cohorte historique aux listes et GET actuels
+
+```bash
+caffeinate -i env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/audit_rc8_list_get_consistency.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --candidate-evidence "$PLAN" \
+  --fresh-all-inventory "$NEW_ALL" \
+  --max-messages 50 \
+  --max-history-pages 100
+```
+
+Le script relit 50 messages au maximum sans persister les corps,
+recoupe leur appartenance à l'inventaire complet indépendant et clôt
+History à partir de la **nouvelle** frontière de cette observation.
+Il n'affiche aucun identifiant Gmail.
+
+- `not_listed_and_get_404_count` : absence de source actuelle
+  corroborée par l'absence dans la liste et par le GET 404, sans preuve
+  historique de suppression.
+- `listed_but_get_404_count` : contradiction entre deux endpoints
+  Gmail au nouveau frontier. **NO-GO**, diagnostic de source à poursuivre.
+- `not_listed_but_full_retrievable_count` : autre contradiction.
+- `changed_since_new_source_count` ou
+  `payload_newer_than_new_source_count` : source active pendant le
+  contrôle, requalification nécessaire.
+- `REFRESH_FROZEN_RC8_PLAN_REQUIRED` : la source actuelle a changé
+  par rapport au plan figé, pas une permission de supprimer les IDs de
+  l'ancien inventaire. Les documents d'origine restent immuables.
+
+Seulement lorsque l'observation est complète et que l'audit ne montre
+plus de contradiction ou course source, dériver un **nouveau** scoped
+inventory à partir de `NEW_ALL`, aligner History en incremental strict,
+régénérer le plan et vérifier la nouvelle identité RC8 avant capture.
+
+Ne pas forcer une capture sur le plan à `15906422`. Les RAW
+historiques restent toujours en NO-GO strict, même si les deux IDs sont
+absents du Current State à une frontière ultérieure.
