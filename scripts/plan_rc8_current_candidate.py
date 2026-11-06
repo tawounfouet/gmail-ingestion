@@ -215,6 +215,7 @@ def build_candidate_plan(
         "schema_version": 1,
         "candidate_mode": "CURRENT_RECONCILIATION",
         "candidate_id": candidate_id,
+        "account_id": account_id,
         "status": "BLOCKED_SOURCE_QUALIFICATION_REQUIRED",
         "source_history_id": source_frontier,
         "committed_history_id": last_frontier,
