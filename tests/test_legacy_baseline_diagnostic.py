@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.control import MessageDiscoveryQueue
@@ -64,7 +65,7 @@ def _seed(root: Path, *, broken: bool = False) -> LocalArtifactStore:
     return store
 
 
-def test_diagnostic_reads_bounded_range_without_writes(tmp_path: Path, capsys: object) -> None:
+def test_diagnostic_reads_bounded_range_without_writes(tmp_path: Path) -> None:
     root = tmp_path / "artifacts"
     _seed(root)
     before = sorted(str(path.relative_to(root)) for path in root.rglob("*"))
@@ -84,7 +85,9 @@ def test_diagnostic_reads_bounded_range_without_writes(tmp_path: Path, capsys: o
     assert after == before
 
 
-def test_diagnostic_reports_missing_raw_without_identifiers(tmp_path: Path, capsys: object) -> None:
+def test_diagnostic_reports_missing_raw_without_identifiers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = tmp_path / "artifacts"
     _seed(root, broken=True)
 
@@ -99,7 +102,7 @@ def test_diagnostic_reports_missing_raw_without_identifiers(tmp_path: Path, caps
     )
 
     assert result == 1
-    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    output = capsys.readouterr().out
     assert "failing_range: [1, 2)" in output
     assert "stage: read-raw" in output
     assert "result: FAIL" in output
