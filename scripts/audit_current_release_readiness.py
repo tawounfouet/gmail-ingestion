@@ -13,7 +13,6 @@ import json
 from collections import Counter
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
 from compare_recovery_evidence import _manifest
