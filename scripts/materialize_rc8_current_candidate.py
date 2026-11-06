@@ -22,6 +22,7 @@ from uuid import UUID
 from observe_current_source_inventory import write_private_inventory
 from plan_rc8_current_candidate import _source, build_candidate_plan
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
+import psutil
 from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion import __version__
@@ -50,6 +51,24 @@ from gmail_ingestion.projection.message_delta import (
 
 class CandidateMaterializationError(RuntimeError):
     """One or more RC8 source/dataset provenance guards failed."""
+
+
+def require_resource_headroom(
+    disk_root: Path, *, min_free_gib: int = 20, min_available_ram_gib: int = 24,
+) -> dict[str, float]:
+    """Fail before loading multi-million-row normalized baseline tables."""
+    if min_free_gib < 1 or min_available_ram_gib < 1:
+        raise CandidateMaterializationError("Positive memory and disk reserves required")
+    free_disk = shutil.disk_usage(disk_root).free / 1024**3
+    available_ram = psutil.virtual_memory().available / 1024**3
+    if free_disk < min_free_gib:
+        raise CandidateMaterializationError("Insufficient free disk for Current candidate")
+    if available_ram < min_available_ram_gib:
+        raise CandidateMaterializationError("Insufficient available RAM for Current candidate")
+    return {
+        "free_disk_gib": round(free_disk, 2),
+        "available_ram_gib": round(available_ram, 2),
+    }
 
 
 def _source_manifest(
@@ -170,6 +189,7 @@ def build_current_candidate(
     source_inventory: Path,
     recovery_run_id: UUID,
     min_free_gib: int = 20,
+    min_available_ram_gib: int = 24,
 ) -> dict[str, object]:
     """Create a separately versioned source-overlay dataset without promotion."""
     if min_free_gib < 1:
@@ -180,8 +200,11 @@ def build_current_candidate(
         raise CandidateMaterializationError("Candidate projection root must be isolated")
     if projection_root.name in {".gmail-ingestion-control", ".gmail-ingestion-control-live-0.5.0"}:
         raise CandidateMaterializationError("Refusing an authoritative control-plane root")
-    if shutil.disk_usage(artifact_root).free < min_free_gib * 1024**3:
-        raise CandidateMaterializationError("Insufficient free disk for full Current materialization")
+    headroom = require_resource_headroom(
+        artifact_root,
+        min_free_gib=min_free_gib,
+        min_available_ram_gib=min_available_ram_gib,
+    )
     source_ids, source_doc = _source(source_inventory)
     plan = build_candidate_plan(
         artifact_root=artifact_root, account_id=account_id,
@@ -268,6 +291,10 @@ def build_current_candidate(
     )
     # Recompute from the same immutable baseline and frozen event set to check
     # deterministic replay. This is not independent source validation.
+    require_resource_headroom(
+        artifact_root, min_free_gib=min_free_gib,
+        min_available_ram_gib=min_available_ram_gib,
+    )
     replay_rows, _ = reconcile_current_rows(
         account_id=account_id,
         baseline_tables=baseline.tables,
@@ -306,6 +333,7 @@ def build_current_candidate(
         "replay_digest": replay_digest,
         "deterministic_replay_equal": True,
         "row_counts": dict(result.row_counts),
+        "resource_headroom_gib": headroom,
         "diagnostics": dict(diagnostics | substitutions),
         "source_labels_threads_mime_verified": False,
         "independent_incremental_equals_rebuild": False,
@@ -341,6 +369,7 @@ def main() -> int:
     p.add_argument("--source-inventory", type=Path, required=True)
     p.add_argument("--recovery-run-id", type=UUID, required=True)
     p.add_argument("--min-free-gib", type=int, default=20)
+    p.add_argument("--min-available-ram-gib", type=int, default=24)
     args = p.parse_args()
     try:
         report = build_current_candidate(
@@ -348,6 +377,7 @@ def main() -> int:
             account_id=args.account_id, baseline_run_id=args.baseline_run_id,
             delta_run_ids=tuple(args.delta_run_id), source_inventory=args.source_inventory,
             recovery_run_id=args.recovery_run_id, min_free_gib=args.min_free_gib,
+            min_available_ram_gib=args.min_available_ram_gib,
         )
     except (OSError, ValueError, RuntimeError, TypeError, KeyError) as exc:
         print("RC8 MATERIALIZATION FAILED: exception_type=" + type(exc).__name__)
