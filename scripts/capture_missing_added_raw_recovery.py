@@ -69,10 +69,22 @@ def capture_evidence(
             or meta.get("unique_ids_evaluated") != len(ids)
         ):
             raise RecoveryEvidenceError("Previous recovery manifest does not match input")
-        # A completed recovery manifest is reused without overwriting the historical source.
+        captured_ids = meta.get("captured_ids")
+        missing_ids = meta.get("not_found_ids")
+        if (
+            not isinstance(captured_ids, list)
+            or not isinstance(missing_ids, list)
+            or not all(isinstance(x, str) for x in captured_ids + missing_ids)
+            or set(captured_ids).intersection(missing_ids)
+            or set(captured_ids + missing_ids) != ids
+            or not all(writer.exists(recovery_run_id, item) for item in captured_ids)
+        ):
+            raise RecoveryEvidenceError("Completed recovery manifest has missing or inconsistent RAW")
         return _public_summary(meta, reused=True)
 
     accessible = missing = reused_raw = calls = 0
+    captured_ids: list[str] = []
+    not_found_ids: list[str] = []
     observed_before_or_at_target = observed_after_target = unknown_history = 0
     total_bytes = 0
     for message_id in sorted(ids):
@@ -88,6 +100,7 @@ def capture_evidence(
                 except GmailMessageNotFoundError:
                     missing += 1
                     calls += 1
+                    not_found_ids.append(message_id)
                     continue
                 calls += 1
                 if payload.get("id") != message_id:
@@ -102,6 +115,7 @@ def capture_evidence(
                 stage = "write-derived"
                 writer.write(recovery_run_id, message_id, payload)
             accessible += 1
+            captured_ids.append(message_id)
             # Current historyId is only an observation: it cannot prove prior label state.
             current_history = payload.get("historyId")
             if isinstance(current_history, str) and current_history.isdecimal():
@@ -135,6 +149,8 @@ def capture_evidence(
         "historical_target_history_id": target_history_id,
         "historical_unresolved_add_events": historical_count,
         "unique_ids_evaluated": len(ids),
+        "captured_ids": captured_ids,
+        "not_found_ids": not_found_ids,
         "captured_current_full": accessible,
         "not_found_404_now": missing,
         "existing_derived_raw_reused": reused_raw,
@@ -166,7 +182,10 @@ def capture_evidence(
 def _public_summary(meta: dict[str, Any], *, reused: bool) -> dict[str, object]:
     return {
         key: value for key, value in meta.items()
-        if key not in {"account_id", "delta_run_ids", "baseline_run_id"}
+        if key not in {
+            "account_id", "delta_run_ids", "baseline_run_id",
+            "captured_ids", "not_found_ids",
+        }
     } | {"manifest_reused": reused}
 
 
