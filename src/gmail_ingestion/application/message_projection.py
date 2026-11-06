@@ -58,7 +58,7 @@ class MessageDeltaProjectionService:
         self.foundation = ProjectionFoundationService(projection_store)
         self.baseline_reader = baseline_reader or NormalizedBaselineReader(artifact_store)
         self.dataset_store = dataset_store or LocalProjectionDatasetStore(projection_store)
-        self.reducer = reducer or MessageProjectionReducer()
+        self.reducer = reducer or IndexedMessageProjectionReducer()
         self.raw_messages = RawMessageWriter(artifact_store)
 
     def materialize(
