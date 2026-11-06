@@ -70,7 +70,8 @@ def test_end_to_end_candidate_is_isolated_and_deterministically_replayed(
         messages_total=1, threads_total=1, history_id="100",
     )
     normalized = normalize_snapshot(
-        account, [], [_payload("base", history_id="100", subject="existing")],
+        account, [{"id": "INBOX", "name": "INBOX", "type": "system"}],
+        [_payload("base", history_id="100", subject="existing")],
         ingested_at=NOW,
         dataset_version="baseline",
         source_connector_version="0.5.0rc7",
