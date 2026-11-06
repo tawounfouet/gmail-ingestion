@@ -149,6 +149,8 @@ def build_candidate_plan(
     if min_free_gib < 1:
         raise ValueError("min_free_gib must be positive")
     source_ids, source = _source(source_inventory)
+    if source.get("account_id") != account_id:
+        raise RC8CandidateError("Scoped source evidence belongs to another account")
     store = LocalArtifactStore(artifact_root)
     _baseline_manifest(store, account_id, baseline_run_id)
     baseline_ids, baseline_frontier, segments = read_baseline_ids(
