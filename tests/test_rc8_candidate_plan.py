@@ -48,6 +48,7 @@ def _scoped_source(path: Path, ids: list[str], *, scope: str | None = None) -> N
     sha = hashlib.sha256(("\n".join(sorted(ids)) + "\n").encode()).hexdigest()
     path.write_text(json.dumps({
         "schema_version": 1,
+        "account_id": ACCOUNT,
         "status": "OBSERVED_NOT_RELEASE_QUALIFIED",
         "scope": scope or "include_spam_trash=false; unfiltered Gmail messages",
         "include_spam_trash": False,
