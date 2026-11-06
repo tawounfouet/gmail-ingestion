@@ -17,12 +17,13 @@ def module(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 class _Messages:
-    def __init__(self, pages: list[dict[str, Any]]) -> None:
+    def __init__(self, pages: list[dict[str, Any]], *, scope: bool = True) -> None:
         self.pages = pages
         self.calls = 0
+        self.scope = scope
 
     def list_messages(self, **kwargs: Any) -> dict[str, Any]:
-        assert kwargs["include_spam_trash"] is True
+        assert kwargs["include_spam_trash"] is self.scope
         item = self.pages[self.calls]
         self.calls += 1
         return item
@@ -42,9 +43,10 @@ class _History:
 
 class _Client:
     def __init__(
-        self, msg_pages: list[dict[str, Any]], hist_pages: list[dict[str, Any]]
+        self, msg_pages: list[dict[str, Any]], hist_pages: list[dict[str, Any]],
+        *, include_spam_trash: bool = True,
     ) -> None:
-        self.messages = _Messages(msg_pages)
+        self.messages = _Messages(msg_pages, scope=include_spam_trash)
         self.history = _History(hist_pages)
 
     def get_profile(self) -> dict[str, str]:
@@ -126,3 +128,61 @@ def test_no_message_ids_in_public_report(module: Any) -> None:
     report = {"ids": ["secret-message-id"], "message_count": 1, "history_end": "101"}
     public = {key: value for key, value in report.items() if key != "ids"}
     assert "secret-message-id" not in json.dumps(public)
+
+
+def test_excluded_scope_is_explicit_and_preserves_existing_global_default(
+    module: Any,
+) -> None:
+    client = _Client(
+        [{"messages": [{"id": "kept"}]}],
+        [{"historyId": "101", "history": []}],
+        include_spam_trash=False,
+    )
+    result = module.observe_inventory(client, include_spam_trash=False)
+    assert result["scope"] == "include_spam_trash=false; unfiltered Gmail messages"
+    assert result["include_spam_trash"] is False
+    assert result["ids"] == ["kept"]
+    assert result["stable_release_qualified"] is False
+
+
+def test_scoped_inventory_rejects_additions_with_unknown_labels(module: Any) -> None:
+    client = _Client(
+        [{"messages": []}],
+        [{"historyId": "101", "history": [
+            {"id": "101", "messagesAdded": [_event("arrived-during-list")]}
+        ]}],
+        include_spam_trash=False,
+    )
+    with pytest.raises(module.InventoryIncompleteError, match="labels unknown"):
+        module.observe_inventory(client, include_spam_trash=False)
+
+
+@pytest.mark.parametrize("field", ["labelsAdded", "labelsRemoved"])
+@pytest.mark.parametrize("label", ["SPAM", "TRASH"])
+def test_scoped_inventory_rejects_scope_membership_mutations(
+    module: Any, field: str, label: str,
+) -> None:
+    client = _Client(
+        [{"messages": [{"id": "m"}]}],
+        [{"historyId": "101", "history": [
+            {"id": "101", field: [{"labelIds": [label], **_event("m")}]}
+        ]}],
+        include_spam_trash=False,
+    )
+    with pytest.raises(module.InventoryIncompleteError, match="membership changed"):
+        module.observe_inventory(client, include_spam_trash=False)
+
+
+def test_scoped_inventory_allows_non_membership_label_mutations(module: Any) -> None:
+    client = _Client(
+        [{"messages": [{"id": "m"}]}],
+        [{"historyId": "101", "history": [
+            {"id": "101", "labelsAdded": [
+                {"labelIds": ["STARRED"], **_event("m")},
+            ]}
+        ]}],
+        include_spam_trash=False,
+    )
+    result = module.observe_inventory(client, include_spam_trash=False)
+    assert result["ids"] == ["m"]
+    assert result["history_records"] == 1

@@ -118,3 +118,61 @@ Remaining acceptance evidence:
 - explicit stable promotion decision.
 
 Until those conditions are satisfied, `v0.5.0` is **NO-GO**.
+
+
+## 2026-11-06: original scope confirmed `include_spam_trash=false`
+
+The actual completed Full Snapshot manifest (run
+`c394dcbb-f5da-4ae0-abb8-c9e6dcf81479`) has:
+
+- `mode=full_snapshot`, `status=COMPLETED`;
+- `include_spam_trash=false`, `message_limit=null`;
+- 177,546 discovered and 177,546 fetched;
+- no explicit query, labels or date filters.
+
+This is definitive evidence that the earlier 181,200-message inventory
+(`include_spam_trash=true`) has an **incompatible scope**. The 3,654
+difference is not a proven loss; the observations also refer to different
+History frontiers.
+
+### Non-destructive second observation with matching discovery scope
+
+The source-inventory CLI now accepts `--exclude-spam-trash` and preserves
+its previous default `include_spam_trash=true`. From the repository root:
+
+```bash
+git switch main
+git pull --ff-only
+GMAIL_PY="/opt/homebrew/opt/python@3.14/bin/python3.14"
+mkdir -p "$HOME/.local/share/gmail-ingestion-private"
+chmod 700 "$HOME/.local/share/gmail-ingestion-private"
+
+caffeinate -i env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/observe_current_source_inventory.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --exclude-spam-trash \
+  --evidence-out "$HOME/.local/share/gmail-ingestion-private/no-spam-trash-$(date -u +%Y%m%dT%H%M%SZ).json" \
+  --max-message-pages 1000 \
+  --max-history-pages 200 \
+  --page-size 500
+```
+
+This is ID-only, read-only and does not overwrite the first private
+inventory. If Gmail reports any message addition or a SPAM/TRASH membership
+change **during the scoped observation**, the CLI fails closed. No
+completed scoped inventory is written, because an ID-only History replay
+cannot reliably classify the new scoped membership.
+
+### Important limitations even after a successful scoped observation
+
+An unfiltered snapshot that excludes Spam/Trash is **not** an all-mail
+baseline. Post-snapshot additions and Spam/Trash label transitions must
+also be modeled by any scoped materializer. The existing
+`compare_source_inventory_ids.py` currently implements only unfiltered,
+all-mail ID parity and correctly refuses an excluded-scope inventory.
+It must not be used to certify scoped Current membership until the
+projection explicitly models those transitions with source provenance.
+
+Do not subtract the earlier 181,200 from the second inventory count as if
+both observations had the same History frontier. No full snapshot,
+bulk projection or stable promotion is authorized by these diagnostics.

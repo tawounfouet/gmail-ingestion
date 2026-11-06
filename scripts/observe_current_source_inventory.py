@@ -62,11 +62,13 @@ def observe_inventory(
     max_message_pages: int = 1000,
     max_history_pages: int = 200,
     page_size: int = 500,
+    include_spam_trash: bool = True,
 ) -> dict[str, object]:
-    """Enumerate source IDs, then converge them through History from start.
+    """Enumerate message IDs and reconcile a bounded History observation.
 
-    Includes Spam/Trash explicitly so the two data sources have the same
-    mailbox-wide scope. Caller must compare scope against the local baseline.
+    Default is mailbox-wide, including Spam/Trash. With exclusions enabled,
+    any History addition or Spam/Trash label mutation during observation
+    fails closed: its membership cannot be inferred safely from an ID alone.
     No source payload, subject, sender, body, or label is downloaded.
     """
     if (
@@ -87,7 +89,7 @@ def observe_inventory(
         response = client.messages.list_messages(
             page_token=next_token,
             max_results=page_size,
-            include_spam_trash=True,
+            include_spam_trash=include_spam_trash,
         )
         message_pages += 1
         items = response.get("messages", [])
@@ -134,6 +136,27 @@ def observe_inventory(
             if not int(start_history_id) < int(record_history) <= int(end_history_id):
                 raise InventoryIncompleteError("History event outside observation range")
             history_records += 1
+            if not include_spam_trash:
+                # Gmail may change discovery membership with label-only
+                # mutations. A plain ID history replay cannot determine the
+                # correct scoped membership after such a mutation.
+                for field in ("labelsAdded", "labelsRemoved"):
+                    labels = record.get(field, [])
+                    if not isinstance(labels, list):
+                        raise InventoryIncompleteError("Invalid Gmail label history collection")
+                    for change in labels:
+                        if not isinstance(change, Mapping):
+                            raise InventoryIncompleteError("Invalid Gmail label history entry")
+                        label_ids = change.get("labelIds")
+                        if (
+                            not isinstance(label_ids, list)
+                            or not all(isinstance(x, str) for x in label_ids)
+                        ):
+                            raise InventoryIncompleteError("Invalid Gmail label history IDs")
+                        if {"SPAM", "TRASH"}.intersection(label_ids):
+                            raise InventoryIncompleteError(
+                                "Spam/Trash membership changed during scoped inventory"
+                            )
             for field, is_add in (("messagesAdded", True), ("messagesDeleted", False)):
                 changes = record.get(field, [])
                 if not isinstance(changes, list):
@@ -146,6 +169,10 @@ def observe_inventory(
                         raise InventoryIncompleteError("History mutation lacks source message")
                     message_id = _source_id(message.get("id"))
                     if is_add:
+                        if not include_spam_trash:
+                            raise InventoryIncompleteError(
+                                "Message added during scoped inventory; source labels unknown"
+                            )
                         ids.add(message_id)
                         catchup_added += 1
                     else:
@@ -164,7 +191,8 @@ def observe_inventory(
     return {
         "schema_version": 1,
         "status": "OBSERVED_NOT_RELEASE_QUALIFIED",
-        "scope": "include_spam_trash=true; unfiltered Gmail messages",
+        "scope": ("include_spam_trash=true; unfiltered Gmail messages" if include_spam_trash else "include_spam_trash=false; unfiltered Gmail messages"),
+        "include_spam_trash": include_spam_trash,
         "history_start": start_history_id,
         "history_end": end_history_id,
         "ids": ordered,
@@ -210,6 +238,11 @@ def main() -> int:
     parser.add_argument("--max-message-pages", type=int, default=1000)
     parser.add_argument("--max-history-pages", type=int, default=200)
     parser.add_argument("--page-size", type=int, default=500)
+    parser.add_argument(
+        "--exclude-spam-trash",
+        action="store_true",
+        help="Match legacy Full Snapshot scope; fail closed on membership-changing History",
+    )
     args = parser.parse_args()
     try:
         provider = build_provider(Path("credentials.json"), args.credential_dir)
@@ -221,6 +254,7 @@ def main() -> int:
             max_message_pages=args.max_message_pages,
             max_history_pages=args.max_history_pages,
             page_size=args.page_size,
+            include_spam_trash=not args.exclude_spam_trash,
         )
         write_private_inventory(args.evidence_out, report)
     except (
