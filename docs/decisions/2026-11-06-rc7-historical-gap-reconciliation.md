@@ -150,3 +150,25 @@ STABLE_0.5.0: NO-GO
 ```
 
 Cette ADR vaut comme registre de décision. Aucun mécanisme de réparation, de fusion ou de promotion n'est activé par sa création.
+
+
+## Addendum 2026-11-06 - History post-target committé selon la sortie opérateur
+
+Après la décision initiale, l'opérateur a partagé la sortie d'une exécution
+`gmail-ingest incremental --no-auto-full-resync` terminée. La sortie locale
+indique un run `8b133cc6-7ebe-4b3a-b26c-d309a058ca4c` en statut
+`COMPLETED`, de `15694719` à `15903183`, avec 37 pages, 8 202 événements,
+3 044 hydratations, 60 tombstones, 5 090 mutations de labels et 8 messages
+indisponibles. Aucun Full Snapshot automatique n'a été déclenché.
+
+Cette information met à jour la priorité opérationnelle de la section 5 :
+**la capture post-cible est signalée comme effectuée par l'opérateur**. Le run
+n'a pas été importé dans la CI et ses artifacts locaux n'ont pas encore été
+revérifiés indépendamment. Le nouvel outil
+`scripts/audit_current_release_readiness.py` fournit cette vérification de
+chaîne et un bilan de provenance sans modification ni accès Gmail.
+
+La décision historique reste inchangée : `HISTORICAL(15694719): NOT QUALIFIED`.
+La qualification du Current State nécessite toujours une réconciliation
+indépendante avec Gmail. La stable `0.5.0` reste `NO-GO`. Voir
+`docs/runbooks/CURRENT_RECONCILIATION_RC8.md`.
