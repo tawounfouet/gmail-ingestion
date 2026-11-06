@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import base64
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-import pytest
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.control import MessageDiscoveryQueue
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
-from scripts.diagnose_legacy_baseline import diagnose
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/diagnose_legacy_baseline.py"
 
 ACCOUNT_ID = "acct_0123456789abcdef01234567"
 RUN_ID = UUID("00000000-0000-0000-0000-000000000981")
@@ -65,46 +66,52 @@ def _seed(root: Path, *, broken: bool = False) -> LocalArtifactStore:
     return store
 
 
+def _run(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--artifact-root",
+            str(root),
+            "--account-id",
+            ACCOUNT_ID,
+            "--snapshot-run-id",
+            str(RUN_ID),
+            "--email-address",
+            "user@example.com",
+            "--start-index",
+            "0",
+            "--stop-index",
+            "2",
+            "--batch-size",
+            "1",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_diagnostic_reads_bounded_range_without_writes(tmp_path: Path) -> None:
     root = tmp_path / "artifacts"
     _seed(root)
     before = sorted(str(path.relative_to(root)) for path in root.rglob("*"))
-
-    result = diagnose(
-        artifact_root=str(root),
-        account_id=ACCOUNT_ID,
-        snapshot_run_id=RUN_ID,
-        email_address="user@example.com",
-        start_index=0,
-        stop_index=2,
-        batch_size=1,
-    )
+    completed = _run(root)
     after = sorted(str(path.relative_to(root)) for path in root.rglob("*"))
 
-    assert result == 0
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "result: PASS" in completed.stdout
     assert after == before
 
 
-def test_diagnostic_reports_missing_raw_without_identifiers(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_diagnostic_reports_missing_raw_without_identifiers(tmp_path: Path) -> None:
     root = tmp_path / "artifacts"
     _seed(root, broken=True)
+    completed = _run(root)
 
-    result = diagnose(
-        artifact_root=str(root),
-        account_id=ACCOUNT_ID,
-        snapshot_run_id=RUN_ID,
-        email_address="user@example.com",
-        start_index=0,
-        stop_index=2,
-        batch_size=1,
-    )
-
-    assert result == 1
-    output = capsys.readouterr().out
-    assert "failing_range: [1, 2)" in output
-    assert "stage: read-raw" in output
-    assert "result: FAIL" in output
-    assert "m2" not in output
-    assert "sender@example.com" not in output
+    assert completed.returncode == 1, completed.stdout + completed.stderr
+    assert "failing_range: [1, 2)" in completed.stdout
+    assert "stage: read-raw" in completed.stdout
+    assert "result: FAIL" in completed.stdout
+    assert "m2" not in completed.stdout
+    assert "sender@example.com" not in completed.stdout
