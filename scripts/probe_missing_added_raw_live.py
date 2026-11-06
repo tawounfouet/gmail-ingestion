@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from audit_missing_added_raw import _baseline_matches
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.api import GmailApiClient, GmailApiError, GmailMessageNotFoundError
@@ -23,7 +24,6 @@ from gmail_ingestion.domain import GmailHistoryEventType
 from gmail_ingestion.persistence import LocalProjectionBatchReader, RawMessageWriter
 from gmail_ingestion.projection import validate_delta_chain
 
-from audit_missing_added_raw import _baseline_matches
 
 
 class MinimalClient(Protocol):
