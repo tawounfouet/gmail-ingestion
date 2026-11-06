@@ -166,3 +166,49 @@ checkpoint state
 receipt state
 projection current pointer
 ```
+
+
+## Resumable RC6 segmented layout
+
+Starting with 0.5.0rc6, the bootstrap writer persists six Parquet tables for each
+bounded batch, and atomically publishes the segment commit marker LAST:
+
+```text
+gmail.projection_baseline/<snapshot-run-id>/
+  segments/
+    00000000/
+      messages.parquet
+      message_headers.parquet
+      message_recipients.parquet
+      message_labels.parquet
+      mime_parts.parquet
+      attachments.parquet
+      segment.json
+    00000001/
+      ...
+  normalized/
+    accounts.parquet
+  baseline_manifest.json           # COMPLETED only after every segment
+```
+
+On restart, every committed segment is checked against its SHA-256 evidence and
+source identity. The same snapshot run ID and batch size must be reused; a
+different batch size is rejected to prevent ambiguous segmentation.
+
+The operator can rerun the same `gmail-ingest bootstrap-baseline` command after an
+interruption. Already committed batches are reused; only missing segments are
+normalized. There is no Gmail API call and no rewrite of the legacy RAW source.
+
+`baseline_manifest.json` remains the only publication signal for a complete
+baseline. An incomplete set of segments must never be treated as a valid
+projection baseline.
+
+### Space and memory
+
+The segment writer avoids making a second full physical Parquet copy to finalize,
+but new normalized data still requires disk space. Check `df -h .` before running,
+especially when the volume is almost full.
+
+The projection reader can load segment files individually, but the current projection
+reducer still materializes normalized rows in RAM. RC6 hardens bootstrap persistence,
+not the memory model of the entire Current State projector.

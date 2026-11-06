@@ -156,3 +156,96 @@ def test_bootstrap_rejects_fetched_record_without_raw(tmp_path: Path) -> None:
             snapshot_run_id=RUN_ID,
             email_address="user@example.com",
         )
+
+
+def test_bootstrap_recovers_after_second_batch_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _seed_snapshot(tmp_path / "artifacts")
+    interrupted = LegacyRawBaselineBootstrapper(store)
+    original_read = interrupted.raw_messages.read
+
+    def fail_second(run_id: UUID, message_id: str) -> dict[str, object]:
+        if message_id == "m2":
+            raise OSError("injected interruption")
+        return original_read(run_id, message_id)
+
+    monkeypatch.setattr(interrupted.raw_messages, "read", fail_second)
+    with pytest.raises(LegacyBaselineBootstrapError, match="committed_segments=1"):
+        interrupted.run(
+            account_id=ACCOUNT_ID,
+            snapshot_run_id=RUN_ID,
+            email_address="user@example.com",
+            batch_size=1,
+        )
+
+    root = store.run_root("gmail.projection_baseline", RUN_ID)
+    committed_first = root / "segments" / "00000000" / "segment.json"
+    assert committed_first.is_file()
+    assert not (root / "baseline_manifest.json").exists()
+
+    fresh = LegacyRawBaselineBootstrapper(store)
+    consumed: list[str] = []
+    fresh_read = fresh.raw_messages.read
+
+    def count_reads(run_id: UUID, message_id: str) -> dict[str, object]:
+        consumed.append(message_id)
+        return fresh_read(run_id, message_id)
+
+    monkeypatch.setattr(fresh.raw_messages, "read", count_reads)
+    resumed = fresh.run(
+        account_id=ACCOUNT_ID,
+        snapshot_run_id=RUN_ID,
+        email_address="user@example.com",
+        batch_size=1,
+    )
+
+    assert consumed == ["m2"]
+    assert resumed.messages_processed == 2
+    assert resumed.row_counts["messages"] == 2
+    assert (root / "segments" / "00000000" / "segment.json").is_file()
+    assert (root / "segments" / "00000001" / "segment.json").is_file()
+    assert (root / "baseline_manifest.json").is_file()
+    baseline = NormalizedBaselineReader(store).read(RUN_ID, ACCOUNT_ID)
+    assert {row["message_id"] for row in baseline.tables["messages"]} == {"m1", "m2"}
+
+
+def test_corrupt_committed_segment_fails_closed(tmp_path: Path) -> None:
+    store = _seed_snapshot(tmp_path / "artifacts")
+    service = LegacyRawBaselineBootstrapper(store)
+    service.run(
+        account_id=ACCOUNT_ID,
+        snapshot_run_id=RUN_ID,
+        email_address="user@example.com",
+        batch_size=1,
+    )
+    root = store.run_root("gmail.projection_baseline", RUN_ID)
+    segment = root / "segments" / "00000000" / "messages.parquet"
+    segment.write_bytes(b"corrupt")
+
+    with pytest.raises(LegacyBaselineBootstrapError, match="committed_segments=0"):
+        service.run(
+            account_id=ACCOUNT_ID,
+            snapshot_run_id=RUN_ID,
+            email_address="user@example.com",
+            batch_size=1,
+        )
+
+
+def test_resume_rejects_changed_batch_size(tmp_path: Path) -> None:
+    store = _seed_snapshot(tmp_path / "artifacts")
+    service = LegacyRawBaselineBootstrapper(store)
+    service.run(
+        account_id=ACCOUNT_ID,
+        snapshot_run_id=RUN_ID,
+        email_address="user@example.com",
+        batch_size=1,
+    )
+
+    with pytest.raises(LegacyBaselineBootstrapError, match="metadata mismatch"):
+        service.run(
+            account_id=ACCOUNT_ID,
+            snapshot_run_id=RUN_ID,
+            email_address="user@example.com",
+            batch_size=2,
+        )

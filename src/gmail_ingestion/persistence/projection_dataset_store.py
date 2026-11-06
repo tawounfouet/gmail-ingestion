@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -95,10 +96,8 @@ class NormalizedBaselineReader:
                         fallback_path,
                     )
                 )
-            except StorageError as fallback_exc:
-                raise ProjectionDatasetError(
-                    f"Missing normalized baseline table {table_name!r} for run {run_id}"
-                ) from fallback_exc
+            except StorageError:
+                return self._read_segmented_table(run_id, table_name)
         pa = importlib.import_module("pyarrow")
         pq = importlib.import_module("pyarrow.parquet")
         table = pq.read_table(pa.BufferReader(raw))
@@ -106,6 +105,93 @@ class NormalizedBaselineReader:
         if not isinstance(rows, list):
             raise ProjectionDatasetError(f"Baseline table {table_name!r} is invalid")
         return [cast(dict[str, Any], row) for row in rows]
+
+    def _read_segmented_table(
+        self,
+        run_id: UUID,
+        table_name: str,
+    ) -> list[dict[str, Any]]:
+        """Read only a completed, hash-qualified segmented projection baseline."""
+        try:
+            manifest_raw = self.store.read_bytes(
+                self.store.uri_for(
+                    self.projection_baseline_job_id, run_id, "baseline_manifest.json"
+                )
+            )
+        except StorageError as exc:
+            raise ProjectionDatasetError(
+                f"Missing normalized baseline table {table_name!r} for run {run_id}"
+            ) from exc
+        try:
+            manifest = json.loads(manifest_raw)
+        except (TypeError, ValueError) as exc:
+            raise ProjectionDatasetError("Projection baseline manifest is invalid") from exc
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("layout") != "segmented-parquet-v1"
+            or manifest.get("status") != "COMPLETED"
+            or manifest.get("source_snapshot_run_id") != str(run_id)
+        ):
+            raise ProjectionDatasetError("Segmented projection baseline is not completed")
+        total = manifest.get("segment_count")
+        batch_size = manifest.get("batch_size")
+        total_messages = manifest.get("total_messages")
+        if (
+            not isinstance(total, int) or isinstance(total, bool) or total < 1
+            or not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1
+            or not isinstance(total_messages, int) or isinstance(total_messages, bool)
+            or total_messages < 1
+            or total != (total_messages + batch_size - 1) // batch_size
+        ):
+            raise ProjectionDatasetError("Segmented baseline frontier metadata is invalid")
+        pa = importlib.import_module("pyarrow")
+        pq = importlib.import_module("pyarrow.parquet")
+        rows: list[dict[str, Any]] = []
+        for index in range(total):
+            prefix = f"segments/{index:08d}"
+            try:
+                evidence = json.loads(
+                    self.store.read_bytes(
+                        self.store.uri_for(
+                            self.projection_baseline_job_id, run_id, f"{prefix}/segment.json"
+                        )
+                    )
+                )
+                raw = self.store.read_bytes(
+                    self.store.uri_for(
+                        self.projection_baseline_job_id,
+                        run_id,
+                        f"{prefix}/{table_name}.parquet",
+                    )
+                )
+            except (StorageError, TypeError, ValueError) as exc:
+                raise ProjectionDatasetError(
+                    f"Segmented baseline is missing committed segment {index}"
+                ) from exc
+            if (
+                not isinstance(evidence, dict)
+                or evidence.get("layout") != "segmented-parquet-v1"
+                or evidence.get("source_snapshot_run_id") != str(run_id)
+                or evidence.get("segment_index") != index
+                or evidence.get("start") != index * batch_size
+                or evidence.get("stop") != min((index + 1) * batch_size, total_messages)
+                or evidence.get("sha256", {}).get(table_name) != hashlib.sha256(raw).hexdigest()
+            ):
+                raise ProjectionDatasetError(
+                    f"Segmented baseline digest/frontier mismatch for segment {index}"
+                )
+            table = pq.read_table(pa.BufferReader(raw))
+            if table.num_rows != evidence.get("row_counts", {}).get(table_name):
+                raise ProjectionDatasetError(
+                    f"Segmented baseline row count mismatch for segment {index}"
+                )
+            rows.extend(cast(list[dict[str, Any]], table.to_pylist()))
+        expected_count = manifest.get("row_counts", {}).get(table_name)
+        if len(rows) != expected_count:
+            raise ProjectionDatasetError(
+                f"Segmented baseline total row count mismatch for {table_name}"
+            )
+        return rows
 
 
 class LocalProjectionDatasetStore:

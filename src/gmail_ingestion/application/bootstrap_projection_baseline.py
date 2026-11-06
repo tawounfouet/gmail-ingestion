@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -14,11 +14,11 @@ from gmail_ingestion.control import MessageDiscoveryQueue
 from gmail_ingestion.domain import GmailAccount, MessageFetchStatus
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.persistence.projection_baseline_writer import (
-    ProjectionBaselineParquetWriter,
     ProjectionBaselineWriteError,
     ProjectionBaselineWriteResult,
 )
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
+from gmail_ingestion.persistence.resumable_baseline_writer import ResumableProjectionBaselineWriter
 from gmail_ingestion.projection.message_delta import MESSAGE_PROJECTION_TABLES
 
 ProgressCallback = Callable[[int, int], None]
@@ -48,10 +48,10 @@ class LegacyRawBaselineBootstrapper:
         self,
         artifact_store: ArtifactStore,
         *,
-        writer: ProjectionBaselineParquetWriter | None = None,
+        writer: ResumableProjectionBaselineWriter | None = None,
     ) -> None:
         self.artifact_store = artifact_store
-        self.writer = writer or ProjectionBaselineParquetWriter(artifact_store)
+        self.writer = writer or ResumableProjectionBaselineWriter(artifact_store)
         self.raw_messages = RawMessageWriter(artifact_store)
 
     def run(
@@ -118,36 +118,32 @@ class LegacyRawBaselineBootstrapper:
             source_connector_version=__version__,
         ).rows("accounts")[0]
 
-        processed = 0
+        def load_batch(
+            start: int,
+            stop: int,
+        ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+            chunk = records[start:stop]
+            payloads: list[Mapping[str, Any]] = []
+            for record in chunk:
+                payload = self.raw_messages.read(snapshot_run_id, record.message_id)
+                if payload.get("threadId") != record.thread_id:
+                    raise LegacyBaselineBootstrapError(
+                        "RAW message threadId differs from discovery evidence"
+                    )
+                payloads.append(payload)
 
-        def batches() -> Iterator[Mapping[str, Sequence[Mapping[str, Any]]]]:
-            nonlocal processed
-            for start in range(0, len(records), batch_size):
-                chunk = records[start : start + batch_size]
-                payloads: list[Mapping[str, Any]] = []
-                for record in chunk:
-                    payload = self.raw_messages.read(snapshot_run_id, record.message_id)
-                    if payload.get("threadId") != record.thread_id:
-                        raise LegacyBaselineBootstrapError(
-                            f"RAW message {record.message_id!r} threadId differs from discovery"
-                        )
-                    payloads.append(payload)
-
-                normalized = normalize_snapshot(
-                    account,
-                    (),
-                    payloads,
-                    ingested_at=ingested_at,
-                    dataset_version=str(snapshot_run_id),
-                    source_connector_version=__version__,
-                )
-                processed += len(chunk)
-                if progress is not None:
-                    progress(processed, len(records))
-                yield {
-                    name: normalized.rows(name)
-                    for name in MESSAGE_PROJECTION_TABLES
-                }
+            normalized = normalize_snapshot(
+                account,
+                (),
+                payloads,
+                ingested_at=ingested_at,
+                dataset_version=str(snapshot_run_id),
+                source_connector_version=__version__,
+            )
+            return {
+                name: normalized.rows(name)
+                for name in MESSAGE_PROJECTION_TABLES
+            }
 
         try:
             result: ProjectionBaselineWriteResult = self.writer.write(
@@ -155,15 +151,17 @@ class LegacyRawBaselineBootstrapper:
                 account_id=account_id,
                 history_id=queue.history_start,
                 account_row=account_row,
-                batches=batches(),
+                batch_size=batch_size,
+                total_messages=len(records),
+                batch_loader=load_batch,
                 dataset_version=str(snapshot_run_id),
                 source_connector_version=__version__,
+                progress=progress,
             )
         except (OSError, ProjectionBaselineWriteError, ValueError) as exc:
             raise LegacyBaselineBootstrapError(str(exc)) from exc
 
-        if result.reused:
-            processed = int(result.row_counts.get("messages", 0))
+        processed = int(result.row_counts.get("messages", 0))
 
         return LegacyBaselineBootstrapResult(
             run_id=result.run_id,
