@@ -200,8 +200,13 @@ def build_current_candidate(
         raise CandidateMaterializationError("Candidate projection root must be isolated")
     if projection_root.name in {".gmail-ingestion-control", ".gmail-ingestion-control-live-0.5.0"}:
         raise CandidateMaterializationError("Refusing an authoritative control-plane root")
+    output_filesystem = (
+        projection_root if projection_root.is_dir() else projection_root.parent
+    )
+    if not output_filesystem.is_dir():
+        raise CandidateMaterializationError("Candidate output parent does not exist")
     headroom = require_resource_headroom(
-        artifact_root,
+        output_filesystem,
         min_free_gib=min_free_gib,
         min_available_ram_gib=min_available_ram_gib,
     )
@@ -292,7 +297,7 @@ def build_current_candidate(
     # Recompute from the same immutable baseline and frozen event set to check
     # deterministic replay. This is not independent source validation.
     require_resource_headroom(
-        artifact_root, min_free_gib=min_free_gib,
+        output_filesystem, min_free_gib=min_free_gib,
         min_available_ram_gib=min_available_ram_gib,
     )
     replay_rows, _ = reconcile_current_rows(
@@ -311,6 +316,10 @@ def build_current_candidate(
     del replay_rows
     gc.collect()
 
+    require_resource_headroom(
+        output_filesystem, min_free_gib=min_free_gib,
+        min_available_ram_gib=min_available_ram_gib,
+    )
     result = dataset_store.write_candidate(
         account_id, projection_id, rows,
         logical_digest=digest, table_names=CURRENT_PROJECTION_TABLES,
