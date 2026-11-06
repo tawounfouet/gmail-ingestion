@@ -207,3 +207,67 @@ historique `gmail-ingest project --promote`.
 
 Le projet doit **conserver 0.5.0 stable en NO-GO** jusqu'à une décision explicite,
 avec preuves réelles anonymisées, sur l'issue #29.
+
+
+## 2026-11-07 - Capture des 50 exceptions bloquée par un 404 Gmail
+
+Le plan local a été vérifié avec `candidate_id=rc8_7ddada510a3242aebb7d54b77c830a46`,
+source `15906422`, History committé `15906426`, et 50 IDs à
+récupérer. La capture a échoué par
+`RC8 SOURCE CAPTURE FAILED: exception_type=GmailMessageNotFoundError`.
+
+Cela prouve qu'**au moins un ID du plan gelé n'est plus hydratable au moment
+du `messages.get(full)`**. Cela ne prouve pas que le message a été supprimé,
+et ne suffit pas à établir que la source à la frontière `15906422` était
+incorrecte. Le script original capture toute la cohorte en mémoire avant
+de persister les RAW et le manifest : le run interrompu n'est **pas** une
+preuve de capture réussie et ne doit pas être référencé comme récupération.
+
+### Diagnostic ciblé, sans réingestion ni écriture
+
+Après `git pull --ff-only`, réutiliser le même fichier privé de plan :
+
+```bash
+GMAIL_PY="/opt/homebrew/opt/python@3.14/bin/python3.14"
+PRIV="$HOME/.local/share/gmail-ingestion-private"
+PLAN="$(ls -1t "$PRIV"/rc8-plan-*.json | head -n 1)"
+
+caffeinate -i env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/diagnose_rc8_capture_cohort.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --candidate-evidence "$PLAN" \
+  --max-messages 50 \
+  --max-history-pages 100
+```
+
+Ce diagnostic effectue au plus 50 appels `messages.get(full)` et une
+lecture bornée de Gmail History à partir de `15906422`. Il conserve les
+résultats **uniquement en mémoire**, retourne exclusivement des compteurs
+expurgés et ne touche ni aux fichiers historiques ni au pointeur Current.
+
+Interprétation des résultats :
+
+- `message_not_found_count` compte les 404 sur la cohorte privée ;
+- `not_found_with_post_frontier_delete_count` compte uniquement les
+  404 corroborés par une entrée `messagesDeleted` Gmail après
+  `15906422`, sans les requalifier en suppression historique à cette
+  frontière ;
+- `not_found_without_post_frontier_delete_count` reste **non prouvé** :
+  ne jamais inventer une suppression pour en faire un GO ;
+- `payload_newer_than_source_frontier_count` et
+  `required_message_ids_changed_since_inventory_count` mesurent les
+  mouvements de la source postérieurs à l'inventaire ;
+- `currently_outside_source_scope_count` signale une sortie du
+  périmètre hors Spam/Corbeille.
+
+Si un seul de ces bloqueurs est présent, la preuve figée devient
+inadéquate pour capturer ces messages comme s'ils étaient inchangés à
+`15906422`. Il faut **préparer une nouvelle observation source à une
+frontière actualisée**, classifier les changements History, puis régénérer
+un nouveau plan et une nouvelle identité de candidat. Ne pas réutiliser
+le plan gelé en supprimant arbitrairement les IDs introuvables et ne
+pas lancer un nouveau Full Snapshot automatique.
+
+Une fois la source correctement réalignée, la capture actuelle reste
+soumise à ses propres vérifications fail-closed. Même un diagnostic PASS
+n'est pas une qualification de projection ni une décision de release.
