@@ -77,6 +77,9 @@ class ProjectionBaselineParquetWriter:
         }
         writers: dict[str, Any] = {}
         counts = {name: 0 for name in _BASELINE_TABLES}
+        stage = "open-writers"
+        active_table = "none"
+        completed_batches = 0
 
         try:
             for name in _BASELINE_TABLES:
@@ -86,14 +89,20 @@ class ProjectionBaselineParquetWriter:
                     _schema(pa, name),
                 )
 
+            stage = "write-account"
+            active_table = "accounts"
             account_payload = [dict(account_row)]
             writers["accounts"].write_table(
                 pa.Table.from_pylist(account_payload, schema=_schema(pa, "accounts"))
             )
             counts["accounts"] = 1
 
+            stage = "read-and-normalize-next-batch"
+            active_table = "none"
             for batch in batches:
                 for name in MESSAGE_PROJECTION_TABLES:
+                    stage = "convert-and-write-parquet"
+                    active_table = name
                     rows = [dict(row) for row in batch.get(name, ())]
                     if not rows:
                         continue
@@ -106,18 +115,27 @@ class ProjectionBaselineParquetWriter:
                         pa.Table.from_pylist(rows, schema=_schema(pa, name))
                     )
                     counts[name] += len(rows)
+                completed_batches += 1
+                stage = "read-and-normalize-next-batch"
+                active_table = "none"
 
+            stage = "close-writers"
+            active_table = "none"
             for writer in writers.values():
                 writer.close()
             writers.clear()
 
+            stage = "publish-parquet"
             for name in _BASELINE_TABLES:
+                active_table = name
                 os.replace(temp_paths[name], final_paths[name])
                 try:
                     final_paths[name].chmod(0o600)
                 except OSError:
                     pass
 
+            stage = "publish-manifest"
+            active_table = "none"
             manifest = {
                 "projection_baseline_schema_version": 1,
                 "normalized_schema_version": NORMALIZED_SCHEMA_VERSION,
@@ -146,7 +164,11 @@ class ProjectionBaselineParquetWriter:
             )
         except Exception as exc:  # noqa: BLE001 - persistence adapter boundary
             raise ProjectionBaselineWriteError(
-                f"Unable to materialize projection baseline for run {run_id}"
+                "Unable to materialize projection baseline "
+                f"(stage={stage}, table={active_table}, "
+                f"completed_batches={completed_batches}, "
+                f"written_messages={counts['messages']}, "
+                f"exception_type={type(exc).__name__})"
             ) from exc
         finally:
             for writer in writers.values():
