@@ -98,6 +98,22 @@ def reconcile_current_rows(
             "Current source includes a message still labelled Spam or Trash"
         )
 
+    # Recompute MIME graph references as a separate, deterministic gate.
+    part_keys = {
+        (str(row.get("message_id")), str(row.get("part_path")))
+        for row in rows["mime_parts"]
+    }
+    if len(part_keys) != len(rows["mime_parts"]):
+        raise RC8MaterializationError("Current candidate contains duplicate MIME part paths")
+    for part in rows["mime_parts"]:
+        parent = part.get("parent_part_path")
+        if parent is not None and (str(part.get("message_id")), str(parent)) not in part_keys:
+            raise RC8MaterializationError("MIME child references a missing parent part")
+    for attachment in rows["attachments"]:
+        key = (str(attachment.get("message_id")), str(attachment.get("part_path")))
+        if key not in part_keys:
+            raise RC8MaterializationError("Attachment refers to a missing MIME part")
+
     rows["threads"] = recompute_threads(
         account_id, rows["messages"], rows["message_recipients"], committed_events
     )
