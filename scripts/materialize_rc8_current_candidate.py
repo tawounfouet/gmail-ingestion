@@ -19,7 +19,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from observe_current_source_inventory import write_private_inventory
+from plan_rc8_current_candidate import _source, build_candidate_plan
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
+from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion import __version__
 from gmail_ingestion.application.rc8_current_reconciliation import (
@@ -43,9 +46,6 @@ from gmail_ingestion.projection.message_delta import (
     MESSAGE_PROJECTION_TABLES,
     PreparedMessageDelta,
 )
-
-from observe_current_source_inventory import write_private_inventory
-from plan_rc8_current_candidate import _source, build_candidate_plan
 
 
 class CandidateMaterializationError(RuntimeError):
@@ -134,7 +134,7 @@ def _prepared_events(
             continue
         try:
             payload = original_raw.read(event.run_id, event.message_id)
-        except (OSError, ValueError):
+        except (StorageError, OSError, ValueError):
             payload = recovery.get(event.message_id)
             if payload is None:
                 raise CandidateMaterializationError(
@@ -236,18 +236,17 @@ def build_current_candidate(
         event for event in all_events
         if int(event.history_id) <= int(plan["source_history_id"])
     ]
-    normalized_current = {
-        mid: {
-            name: normalize_snapshot(
-                baseline.account, (), (payload,),
-                ingested_at=datetime(1970, 1, 1, tzinfo=UTC),
-                dataset_version=projection_id,
-                source_connector_version=__version__,
-            ).rows(name)
-            for name in MESSAGE_PROJECTION_TABLES
+    normalized_current: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for mid, payload in recovery.items():
+        normalized = normalize_snapshot(
+            baseline.account, (), (payload,),
+            ingested_at=datetime(1970, 1, 1, tzinfo=UTC),
+            dataset_version=projection_id,
+            source_connector_version=__version__,
+        )
+        normalized_current[mid] = {
+            name: normalized.rows(name) for name in MESSAGE_PROJECTION_TABLES
         }
-        for mid, payload in recovery.items()
-    }
     prepared, substitutions = _prepared_events(
         account=baseline.account, plan=plan,
         original_raw=RawMessageWriter(store),
