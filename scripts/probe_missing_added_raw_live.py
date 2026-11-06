@@ -25,7 +25,6 @@ from gmail_ingestion.persistence import LocalProjectionBatchReader, RawMessageWr
 from gmail_ingestion.projection import validate_delta_chain
 
 
-
 class MinimalClient(Protocol):
     def get_message(
         self, message_id: str, *, format: str = "minimal"
