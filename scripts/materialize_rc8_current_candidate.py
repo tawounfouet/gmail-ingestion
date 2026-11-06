@@ -19,10 +19,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import psutil
+
 from observe_current_source_inventory import write_private_inventory
 from plan_rc8_current_candidate import _source, build_candidate_plan
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
-import psutil
 from pyingestkit.core.exceptions import StorageError
 
 from gmail_ingestion import __version__
