@@ -315,6 +315,13 @@ def build_current_candidate(
         account_id, projection_id, rows,
         logical_digest=digest, table_names=CURRENT_PROJECTION_TABLES,
     )
+    physical_digests: dict[str, str] = {}
+    for name, path in result.table_paths.items():
+        checksum = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                checksum.update(chunk)
+        physical_digests[name] = checksum.hexdigest()
     evidence = {
         "schema_version": 1,
         "status": "CANDIDATE_DATASET_NOT_SOURCE_QUALIFIED",
@@ -330,6 +337,7 @@ def build_current_candidate(
         "source_id_set_sha256": source_doc["id_set_sha256"],
         "exception_ledger_sha256": plan["exception_ledger_sha256"],
         "logical_digest": digest,
+        "parquet_sha256": dict(sorted(physical_digests.items())),
         "replay_digest": replay_digest,
         "deterministic_replay_equal": True,
         "row_counts": dict(result.row_counts),
