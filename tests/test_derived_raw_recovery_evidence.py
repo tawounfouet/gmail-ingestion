@@ -126,10 +126,10 @@ def test_capture_refuses_identity_mismatch_and_excessive_sizes(
     )
     client = _Client()
     client.mode = "wrong-id"
-    with pytest.raises(module.RecoveryEvidenceError, match="identity mismatch"):
+    with pytest.raises(module.RecoveryEvidenceError, match="stage=fetch-live-full"):
         _invoke(module, tmp_path, client)
     client.mode = "oversize"
-    with pytest.raises(module.RecoveryEvidenceError, match="per-message cap"):
+    with pytest.raises(module.RecoveryEvidenceError, match="stage=enforce-size"):
         module.capture_evidence(
             artifact_root=tmp_path / "artifacts",
             account_id=ACCOUNT,
