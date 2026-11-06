@@ -136,3 +136,40 @@ Before changing package version, tagging, or publishing:
 - [ ] A recorded release decision authorizes stable promotion.
 
 Until then: **DO NOT create `v0.5.0` or publish a stable GitHub Release.**
+
+
+## Optional source-ID observation (read-only; NOT a stable gate)
+
+A separate bounded source discovery utility now exists. It retrieves Gmail
+message ID references, not message bodies, across the entire mailbox
+(including Spam and Trash), then applies the post-listing History delta to
+produce an observed ID set. This is an **independent observation** only;
+it does not alter the ingestion checkpoint or substitute for real-time
+label/thread verification, a second inventory, or a qualified candidate.
+
+Save the private file **outside the Git repository**; it contains Gmail IDs.
+Do not publish, upload to GitHub, or paste its full JSON output into a PR.
+
+```bash
+mkdir -p "$HOME/.local/share/gmail-ingestion-private"
+chmod 700 "$HOME/.local/share/gmail-ingestion-private"
+
+python scripts/observe_current_source_inventory.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --evidence-out "$HOME/.local/share/gmail-ingestion-private/source-inventory-20261106.json" \
+  --max-message-pages 1000 \
+  --max-history-pages 200 \
+  --page-size 500
+```
+
+The output file is create-once with mode `0600`; an existing file causes
+a failure rather than silent replacement. A successful read-only capture
+prints *aggregate counts and a digest only*. The capture may involve hundreds
+of `messages.list` calls and History pages for a large mailbox. Confirm
+network/quota tolerance and the source scope first.
+
+If either pagination cap is reached or History expires, no qualified source
+inventory is emitted. A complete single-pass inventory can still miss IDs
+under concurrent pagination shifts. A second independently converged
+inventory, content-free ID set comparison, labels, and thread checks are
+required before claiming equality against the projected state.
