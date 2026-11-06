@@ -24,6 +24,7 @@ from gmail_ingestion.persistence.projection_dataset_store import (
 from gmail_ingestion.persistence.projection_store import LocalProjectionStore
 from gmail_ingestion.persistence.raw_message_writer import RawMessageWriter
 from gmail_ingestion.projection.digest import logical_projection_digest
+from gmail_ingestion.projection.indexed_message_reducer import IndexedMessageProjectionReducer
 from gmail_ingestion.projection.message_delta import (
     CURRENT_PROJECTION_TABLES,
     MESSAGE_PROJECTION_TABLES,
