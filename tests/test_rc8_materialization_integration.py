@@ -172,3 +172,46 @@ def test_end_to_end_candidate_is_isolated_and_deterministically_replayed(
     assert proof["status"] == "CANDIDATE_DATASET_NOT_SOURCE_QUALIFIED"
     assert proof["current_pointer_promoted"] is False
     assert "missing-current" not in path.read_text(encoding="utf-8")
+
+
+    verifier = importlib.import_module("verify_rc8_source_parity")
+    monkeypatch.setattr(verifier, "_source", lambda _: (
+        source_ids, {
+            "account_id": ACCOUNT,
+            "history_end": "110",
+            "id_set_sha256": candidate["source_id_set_sha256"],
+        },
+    ))
+
+    class SourceApi:
+        class Messages:
+            @staticmethod
+            def get_message(mid: str, *, format: str) -> dict[str, Any]:
+                assert format == "full"
+                if mid == "base":
+                    return _payload(mid, history_id="100", subject="existing")
+                return recovery_payloads[mid]
+
+        class History:
+            @staticmethod
+            def list_history(*, start_history_id: str, **kwargs: Any) -> dict[str, Any]:
+                assert start_history_id == "110"
+                return {"historyId": "110", "history": []}
+
+        messages = Messages()
+        history = History()
+
+    parity = verifier.validate_sample(
+        account_id=ACCOUNT,
+        artifact_root=artifact_root,
+        projection_root=projection_root,
+        baseline_run_id=BASE,
+        projection_id=result["projection_id"],
+        scoped_inventory=tmp_path / "private.json",
+        client=SourceApi(),
+        sample_size=3,
+    )
+    assert parity["sample_verified"] == 3
+    assert parity["table_count_verified"] == 6
+    assert parity["parquet_sha256_verified"] is True
+    assert parity["stable_release_qualified"] is False
