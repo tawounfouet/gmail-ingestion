@@ -14,8 +14,6 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from gmail_ingestion.schemas import TABLE_SORT_KEYS
-
 from gmail_ingestion.projection.message_delta import MESSAGE_PROJECTION_TABLES
 
 _IGNORE = frozenset({
