@@ -15,6 +15,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from capture_rc8_current_source_evidence import (
+    SourceCaptureError,
+    SourceClient,
+    _history_record_ids,
+    _load_candidate,
+)
+
 from gmail_ingestion.api import (
     GmailApiClient,
     GmailApiError,
@@ -23,13 +30,6 @@ from gmail_ingestion.api import (
 )
 from gmail_ingestion.auth import GmailAuthError, build_provider
 from gmail_ingestion.config import default_credential_dir
-
-from capture_rc8_current_source_evidence import (
-    SourceClient,
-    SourceCaptureError,
-    _history_record_ids,
-    _load_candidate,
-)
 
 
 def _history_summary(
