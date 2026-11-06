@@ -139,7 +139,7 @@ def diagnose(
                 {name: normalized.rows(name) for name in MESSAGE_PROJECTION_TABLES}
             )
         except Exception as exc:  # noqa: BLE001 - bounded diagnostic boundary
-            print(f"result: FAIL")
+            print("result: FAIL")
             print(f"failing_range: [{start}, {stop})")
             print(f"stage: {stage}")
             print(f"exception_type: {type(exc).__name__}")
@@ -167,7 +167,7 @@ def main() -> int:
             batch_size=args.batch_size,
         )
     except (OSError, ValueError) as exc:
-        print(f"result: INVALID_INPUT")
+        print("result: INVALID_INPUT")
         print(f"exception_type: {type(exc).__name__}")
         return 2
 
