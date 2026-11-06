@@ -56,6 +56,11 @@ jobs:
           gmail-ingest project --help
           gmail-ingest bootstrap-baseline --help
           python scripts/qualify_live_projection.py --help
+          python scripts/derive_scoped_inventory_from_all.py --help
+          python scripts/plan_rc8_current_candidate.py --help
+          python scripts/capture_rc8_current_source_evidence.py --help
+          python scripts/materialize_rc8_current_candidate.py --help
+          python scripts/verify_rc8_source_parity.py --help
           if [[ "$(gmail-ingest version)" == 0.4.* ]]; then
             python scripts/qualify_live_incremental_sync.py --help
             python scripts/qualify_live_incremental_sync.py prepare --help
