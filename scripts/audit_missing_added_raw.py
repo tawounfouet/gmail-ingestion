@@ -126,7 +126,7 @@ def audit(
         missing_by_run[str(event.run_id)] += 1
         if len(examples) < example_limit:
             fingerprint = hashlib.sha256(
-                f"{event.run_id}:{event.message_id}".encode("utf-8")
+                f"{event.run_id}:{event.message_id}".encode()
             ).hexdigest()[:16]
             examples.append(
                 {
