@@ -17,14 +17,13 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from compare_source_inventory_ids import read_baseline_ids
+from observe_current_source_inventory import write_private_inventory
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion.domain import GmailHistoryEventType
 from gmail_ingestion.persistence import LocalProjectionBatchReader, RawMessageWriter
 from gmail_ingestion.projection import validate_delta_chain
-
-from compare_source_inventory_ids import read_baseline_ids
-from observe_current_source_inventory import write_private_inventory
 
 
 class RC8CandidateError(RuntimeError):
