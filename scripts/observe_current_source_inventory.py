@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
@@ -184,12 +185,19 @@ def observe_inventory(
 
 
 def write_private_inventory(path: Path, inventory: Mapping[str, object]) -> None:
-    """Create-once private evidence; refuse silent overwrite of prior observations."""
+    """Atomically create-once private evidence without exposing a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as output:
-        json.dump(inventory, output, sort_keys=True, indent=2)
-        output.write("\n")
+    descriptor, staging = tempfile.mkstemp(prefix=".gmail-inventory-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(inventory, output, sort_keys=True, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        # Atomic hard link fails if destination exists, unlike os.replace().
+        os.link(staging, path)
+    finally:
+        os.unlink(staging)
 
 
 def main() -> int:
