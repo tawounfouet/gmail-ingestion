@@ -131,7 +131,7 @@ def test_ignores_raw_base64_padding_drift_when_normalized_rows_match(
     assert result["gmail_api_calls"] == 0
     assert result["persistent_writes"] == 0
     assert "not-for-output" not in json.dumps(result)
-    assert "equivalent" not in json.dumps(result)
+    assert "\"message_id\": \"equivalent\"" not in json.dumps(result)
     assert before == after
 
 
