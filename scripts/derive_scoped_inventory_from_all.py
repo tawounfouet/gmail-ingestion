@@ -183,6 +183,7 @@ def derive_inventory(
     client: SourceClient,
     *,
     previous_inventory: Path,
+    account_id: str | None = None,
     max_history_pages: int = 200,
     max_label_pages: int = 1000,
     page_size: int = 500,
@@ -191,6 +192,11 @@ def derive_inventory(
     if not 1 <= page_size <= 500 or max_history_pages < 1 or max_label_pages < 1:
         raise ValueError("Positive page caps and page_size 1..500 required")
     previous_ids, prior = read_source_ids(previous_inventory)
+    if account_id is not None:
+        if not account_id.strip():
+            raise SourceReconciliationError("Account identity is missing")
+        if prior.get("account_id") not in (None, account_id):
+            raise SourceReconciliationError("Saved all-mail inventory belongs to another account")
     prior_frontier = _history(prior["history_end"])
     label_start = _history(client.get_profile().get("historyId"))
     if label_start < prior_frontier:
@@ -240,6 +246,7 @@ def derive_inventory(
         "ids": scoped,
         "id_set_sha256": digest,
         "message_count": len(scoped),
+        "account_id": account_id,
         "source_all_inventory_history_id": str(prior_frontier),
         "source_all_inventory_sha256": prior["id_set_sha256"],
         "all_message_count_at_target": len(all_ids),
@@ -278,6 +285,7 @@ def main() -> int:
         report = derive_inventory(
             GmailApiClient(credentials=credentials),
             previous_inventory=a.previous_all_inventory,
+            account_id=a.account_id,
             max_history_pages=a.max_history_pages,
             max_label_pages=a.max_label_pages,
             page_size=a.page_size,
