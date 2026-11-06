@@ -186,3 +186,54 @@ def test_quality_rejects_broken_message_thread_reference() -> None:
 
     with pytest.raises(NormalizedQualityError, match="messages -> threads"):
         validate_normalized_tables(tables)
+
+
+def test_normalization_preserves_valid_headers_around_malformed_entries() -> None:
+    account, _, messages = _fixture()
+    payload = dict(messages[0])
+    original_root = payload["payload"]
+    assert isinstance(original_root, dict)
+    root = dict(original_root)
+    root["headers"] = [
+        {"name": "From", "value": "Alice <alice@example.com>"},
+        {"value": "orphaned header"},
+        {"name": "Subject", "value": "Still available"},
+        {"name": "X-Duplicate", "value": "one"},
+        {"name": "X-Duplicate", "value": "two"},
+        {"name": "X-Bad"},
+    ]
+    original_parts = root["parts"]
+    assert isinstance(original_parts, list)
+    parts = [dict(part) for part in original_parts]
+    parts[0]["headers"] = [
+        {"name": "Content-Type", "value": "text/plain; charset=utf-8"},
+        {"name": "Malformed-Child", "value": None},
+        {"name": "X-Valid-Child", "value": "preserved"},
+    ]
+    root["parts"] = parts
+    payload["payload"] = root
+
+    normalized = normalize_snapshot(
+        account,
+        (),
+        [payload],
+        ingested_at=datetime(2026, 10, 25, 8, 30, tzinfo=UTC),
+        dataset_version="rc5-test",
+        source_connector_version="0.5.0rc5",
+    )
+
+    headers = normalized.rows("message_headers")
+    assert [(row["header_index"], row["header_name"], row["header_value"])
+            for row in headers if row["is_top_level"]] == [
+        (0, "From", "Alice <alice@example.com>"),
+        (2, "Subject", "Still available"),
+        (3, "X-Duplicate", "one"),
+        (4, "X-Duplicate", "two"),
+    ]
+    assert [(row["header_index"], row["header_name"])
+            for row in headers if row["header_name"] == "X-Valid-Child"] == [
+        (2, "X-Valid-Child"),
+    ]
+    assert normalized.rows("messages")[0]["subject"] == "Still available"
+    assert normalized.rows("messages")[0]["text_body"] == "hello"
+    assert len(normalized.rows("mime_parts")) == 3

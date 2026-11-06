@@ -4,6 +4,18 @@ All notable changes to Gmail Ingestion are documented in this file.
 
 The project follows Semantic Versioning with pre-release milestones during the pre-1.0 phase.
 
+## 0.5.0rc5 - Malformed MIME Header Normalization
+
+- Align normalized `message_headers` processing with the MIME analyzer's existing tolerant individual-header parser.
+- Preserve valid root and nested MIME headers, including source indices and repeated names.
+- Skip only structurally malformed individual header entries; retain original immutable RAW evidence.
+- Keep invalid header collection shapes fail-closed as required by the MIME analyzer.
+- Add regression coverage for malformed top-level and nested headers.
+- Address the live bootstrap failure in message index range [92050, 92100), observed on 2026-11-06.
+- Stable 0.5.0 remains blocked pending RC5 automated and real-data qualification.
+
+
+
 
 ## 0.5.0rc4 — 2026-10-27 — Legacy RAW Baseline Bootstrap
 

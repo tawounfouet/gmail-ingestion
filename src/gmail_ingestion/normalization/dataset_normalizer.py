@@ -18,7 +18,7 @@ from gmail_ingestion.domain import (
 from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION, TABLE_CONTRACTS
 
 from .address_parser import ParsedAddress
-from .header_parser import parse_headers
+from .header_parser import parse_headers_tolerant
 from .label_normalizer import normalize_labels
 from .mime_walker import MimeAnalysis, analyze_message
 
@@ -234,7 +234,11 @@ def _header_rows(
     rows: list[dict[str, Any]] = []
 
     def visit(part: Mapping[str, Any], path: str, *, top_level: bool) -> None:
-        parsed = parse_headers(part.get("headers"))
+        # The MIME analyzer already tolerates malformed individual headers.
+        # Keep the normalized header relation consistent with that policy:
+        # preserve valid source indices/duplicates, retain original RAW evidence,
+        # and let malformed entries surface in MimeAnalysis.warnings.
+        parsed, _warnings = parse_headers_tolerant(part.get("headers"))
         part_id = part.get("partId")
         normalized_part_id = part_id if isinstance(part_id, str) else ""
         for entry in parsed.entries:
