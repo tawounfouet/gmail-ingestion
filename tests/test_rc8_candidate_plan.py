@@ -139,7 +139,7 @@ def test_candidate_is_source_bound_unpromotable_and_private(
     private = tmp_path / "candidate.json"
     module.write_private_inventory(private, result)
     assert private.stat().st_mode & 0o077 == 0
-    public = {k: v for k, v in result.items() if k != "private_exception_ledger"}
+    public = {k: v for k, v in result.items() if not k.startswith("private_")}
     assert "missing-current" not in json.dumps(public)
     assert "missing-gone" not in json.dumps(public)
 
