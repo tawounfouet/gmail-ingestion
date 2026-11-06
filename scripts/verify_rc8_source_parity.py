@@ -16,6 +16,8 @@ from typing import Any
 from uuid import UUID
 
 import pyarrow.parquet as pq
+from capture_rc8_current_source_evidence import _assert_stable_recovery_ids
+from plan_rc8_current_candidate import _source
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion import __version__
@@ -25,12 +27,10 @@ from gmail_ingestion.config import default_credential_dir
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.persistence.projection_dataset_store import NormalizedBaselineReader
 from gmail_ingestion.projection.message_delta import (
-    CURRENT_PROJECTION_TABLES, MESSAGE_PROJECTION_TABLES,
+    CURRENT_PROJECTION_TABLES,
+    MESSAGE_PROJECTION_TABLES,
 )
 from gmail_ingestion.quality.rc8_source_parity import compare_message_bundle
-
-from capture_rc8_current_source_evidence import _assert_stable_recovery_ids
-from plan_rc8_current_candidate import _source
 
 
 class RC8SourceSampleError(RuntimeError):
