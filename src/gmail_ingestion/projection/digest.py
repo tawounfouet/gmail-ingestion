@@ -30,23 +30,39 @@ def logical_projection_digest(
     table_names: Sequence[str] = MESSAGE_PROJECTION_TABLES,
 ) -> str:
     """Hash canonical logical rows independently of physical Parquet ordering."""
-    canonical: dict[str, list[dict[str, Any]]] = {}
-    for name in table_names:
+    # Reproduce json.dumps(canonical, sort_keys=True, separators=(",", ":"),
+    # ensure_ascii=False) byte for byte without constructing a multi-GB
+    # canonical payload or serializing every table at once.
+    digest = hashlib.sha256()
+    digest.update(b"{")
+    for table_index, name in enumerate(sorted(table_names)):
+        if table_index:
+            digest.update(b",")
+        digest.update(_compact_json(name).encode("utf-8"))
+        digest.update(b":[")
         keys = TABLE_SORT_KEYS[name]
-        rows = [
-            {
+        ordered = sorted(
+            tables.get(name, ()),
+            key=lambda row: tuple(
+                str(_json_value(row.get(field)) or "") for field in keys
+            ),
+        )
+        for row_index, row in enumerate(ordered):
+            if row_index:
+                digest.update(b",")
+            canonical_row = {
                 key: _json_value(value)
                 for key, value in sorted(dict(row).items())
                 if key not in _NON_LOGICAL_FIELDS
             }
-            for row in tables.get(name, ())
-        ]
-        rows.sort(
-            key=lambda row: tuple(str(row.get(field) or "") for field in keys)
-        )
-        canonical[name] = rows
-    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            digest.update(_compact_json(canonical_row).encode("utf-8"))
+        digest.update(b"]")
+    digest.update(b"}")
+    return digest.hexdigest()
+
+
+def _compact_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _json_value(value: Any) -> Any:
