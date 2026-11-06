@@ -112,11 +112,22 @@ class MessageDeltaProjectionService:
             )
 
         try:
-            baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
-            starting_tables = self._incremental_starting_tables(plan, baseline.tables)
+            if plan.predecessor_projection_id is None:
+                baseline = self.baseline_reader.read(plan.baseline_run_id, plan.account_id)
+                starting_tables = baseline.tables
+                account = baseline.account
+            else:
+                account = self.baseline_reader.read_account(
+                    plan.baseline_run_id, plan.account_id
+                )
+                starting_tables = self.dataset_store.read_version(
+                    plan.account_id,
+                    plan.predecessor_projection_id,
+                    table_names=CURRENT_PROJECTION_TABLES,
+                )
             prepared = self._prepare_deltas(
                 plan,
-                baseline.account,
+                account,
                 events,
                 start_history_id=plan.input_checkpoint_history_id,
             )
@@ -223,20 +234,6 @@ class MessageDeltaProjectionService:
         )
         return logical_projection_digest(
             rows,
-            table_names=CURRENT_PROJECTION_TABLES,
-        )
-
-    def _incremental_starting_tables(
-        self,
-        plan: ProjectionPlan,
-        baseline_tables: Mapping[str, Sequence[Mapping[str, Any]]],
-    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
-        predecessor = plan.predecessor_projection_id
-        if predecessor is None:
-            return baseline_tables
-        return self.dataset_store.read_version(
-            plan.account_id,
-            predecessor,
             table_names=CURRENT_PROJECTION_TABLES,
         )
 
