@@ -53,6 +53,45 @@ class CandidateMaterializationError(RuntimeError):
     """One or more RC8 source/dataset provenance guards failed."""
 
 
+# Static errors in this module may be surfaced as safe diagnostic reason codes.
+# Never interpolate exception messages from dependency exceptions, Gmail payloads,
+# paths, source IDs, or OS exceptions into console output.
+_SAFE_MATERIALIZATION_REASONS: dict[str, str] = {
+    "Positive memory and disk reserves required": "INVALID_RESOURCE_RESERVE",
+    "Insufficient free disk for Current candidate": "DISK_RESERVE_EXHAUSTED",
+    "Insufficient available RAM for Current candidate": "AVAILABLE_RAM_BELOW_RESERVE",
+    "Recovery run UUID cannot be nil": "INVALID_RECOVERY_RUN",
+    "Recovery manifest must be an object": "INVALID_RECOVERY_MANIFEST",
+    "Current recovery evidence identity mismatch": "RECOVERY_PROVENANCE_MISMATCH",
+    "Current recovery content digest ledger invalid": "INVALID_RECOVERY_DIGEST_LEDGER",
+    "Recovery RAW content digest mismatch": "RECOVERY_RAW_DIGEST_MISMATCH",
+    "Recovery message content postdates the observed source frontier":
+        "RECOVERY_PAYLOAD_POSTDATES_SOURCE",
+    "Current in-scope added message has no proven original/current RAW":
+        "REQUIRED_CURRENT_MESSAGE_RAW_MISSING",
+    "Positive minimum free disk is required": "INVALID_DISK_RESERVE",
+    "Candidate projection root must be isolated": "OUTPUT_ROOT_NOT_ISOLATED",
+    "Refusing an authoritative control-plane root": "OUTPUT_ROOT_IS_CONTROL_PLANE",
+    "Candidate output parent does not exist": "OUTPUT_PARENT_MISSING",
+    "Source identity changed during planning": "SOURCE_PROVENANCE_MISMATCH",
+    "The isolated RC8 root has an authoritative Current pointer":
+        "OUTPUT_ROOT_CURRENT_POINTER_PRESENT",
+    "Existing immutable Current candidate must not be overwritten":
+        "CANDIDATE_ALREADY_COMPLETE",
+    "Incomplete candidate data already exists": "CANDIDATE_PARTIAL_OUTPUT_PRESENT",
+    "RC8 deterministic replay digest differs": "REPLAY_DIGEST_MISMATCH",
+    "Current pointer changed during candidate creation":
+        "CURRENT_POINTER_CHANGED",
+}
+
+
+def sanitized_materialization_reason(exc: BaseException) -> str:
+    """Only expose exact, explicitly allowlisted materialization errors."""
+    if type(exc) is not CandidateMaterializationError:
+        return "UNCLASSIFIED_FAIL_CLOSED"
+    return _SAFE_MATERIALIZATION_REASONS.get(str(exc), "UNCLASSIFIED_FAIL_CLOSED")
+
+
 def require_resource_headroom(
     disk_root: Path, *, min_free_gib: int = 20, min_available_ram_gib: int = 24,
 ) -> dict[str, float]:
@@ -398,6 +437,7 @@ def main() -> int:
         )
     except (OSError, ValueError, RuntimeError, TypeError, KeyError) as exc:
         print("RC8 MATERIALIZATION FAILED: exception_type=" + type(exc).__name__)
+        print("reason_code=" + sanitized_materialization_reason(exc))
         return 2
     print(json.dumps(report, sort_keys=True, indent=2))
     return 0

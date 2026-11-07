@@ -346,3 +346,46 @@ régénérer le plan et vérifier la nouvelle identité RC8 avant capture.
 Ne pas forcer une capture sur le plan à `15906422`. Les RAW
 historiques restent toujours en NO-GO strict, même si les deux IDs sont
 absents du Current State à une frontière ultérieure.
+
+
+## 2026-11-07 - Matérialisation interrompue, diagnostic expurgé
+
+L'opérateur a vérifié le manifest complet de récupération (48/48 RAW
+actuels, run `5d22b716-7bf2-4490-b5d0-00541427931e`), **144,07 Gio
+libres et 30,27 Gio RAM disponible** avant matérialisation. Le script a
+retourné `RC8 MATERIALIZATION FAILED: exception_type=CandidateMaterializationError`,
+sans cause détaillée. Ceci n'établit **ni** une insuffisance RAM
+**ni** une erreur de réconciliation : la cause précise est inconnue.
+
+À partir de la présente modification, le script affiche en plus un
+`reason_code` issu d'une liste blanche de motifs internes statiques,
+par exemple `AVAILABLE_RAM_BELOW_RESERVE`,
+`CANDIDATE_PARTIAL_OUTPUT_PRESENT`,
+`REQUIRED_CURRENT_MESSAGE_RAW_MISSING` ou
+`REPLAY_DIGEST_MISMATCH`. Un message inattendu reste
+`UNCLASSIFIED_FAIL_CLOSED`; aucun ID Gmail ni chemin privé ne sera
+affiché. La correction ne supprime **aucun** fichier partiel ni
+n'autorise une promotion.
+
+**Contrôles légers avant tout nouvel essai** :
+
+```bash
+OUT_ROOT="$PWD/qualification/rc8-current-candidates"
+df -h "$OUT_ROOT"
+du -sh "$OUT_ROOT"
+find "$OUT_ROOT" -maxdepth 6 -type f -name '*.parquet' | wc -l
+"/opt/homebrew/opt/python@3.14/bin/python3.14" - <<'PY'
+import psutil
+print(f"available_ram_gib={psutil.virtual_memory().available / 1024**3:.2f}")
+PY
+```
+
+Ne pas lancer de deuxième matérialisation aveuglément : toute sortie
+partielle pourrait bloquer un replay immuable, et le chargement des
+711 segments dans des listes Python peut dépasser les ressources
+disponibles même si la vérification de départ passe. Conserver
+l'intégralité des données et demander une analyse du `reason_code`
+après un nouvel essai **seulement** si le dossier candidat ne
+contient pas de fichiers partiels et les ressources sont suffisantes.
+Un `CANDIDATE_PARTIAL_OUTPUT_PRESENT` exige un examen explicite des
+traces avant toute action destructive.
