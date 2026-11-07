@@ -60,6 +60,9 @@ jobs:
           python scripts/plan_rc8_current_candidate.py --help
           python scripts/capture_rc8_current_source_evidence.py --help
           python scripts/materialize_rc8_current_candidate.py --help
+          python scripts/materialize_rc8_partitioned_candidate.py --help
+          python scripts/audit_rc8_partitioned_candidate.py --help
+          python scripts/verify_rc8_full_source_parity.py --help
           python scripts/verify_rc8_source_parity.py --help
           python scripts/diagnose_rc8_capture_cohort.py --help
           python scripts/audit_rc8_list_get_consistency.py --help
