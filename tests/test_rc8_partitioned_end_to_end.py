@@ -214,3 +214,63 @@ def test_partitioned_end_to_end_with_source_sample(
             scoped_inventory=tmp_path / "source.json",
             max_messages=1,
         )
+
+    class _DriftApi(_Api):
+        class Messages(_Api.Messages):
+            def get_message(self, mid: str, *, format: str) -> dict[str, Any]:
+                payload = super().get_message(mid, format=format)
+                return dict(payload, historyId="111")
+
+        messages = Messages()
+
+    with pytest.raises(exhaustive.RC8FullSourceParityError, match="drifted"):
+        exhaustive.validate_full_source(
+            client=_DriftApi(), account_id=ACCOUNT, artifact_root=artifacts,
+            projection_root=projection_root, baseline_run_id=BASE,
+            projection_id=result["projection_id"],
+            scoped_inventory=tmp_path / "source.json",
+            max_messages=2,
+        )
+
+    # Inject a non-deterministic second pass: Parquet can exist, but no
+    # complete manifest or authoritative pointer is ever published.
+    failure_root = tmp_path / "isolated-failure"
+    failure_root.mkdir()
+    digest_original = script.DiskCurrentProjection.logical_digest
+    digest_calls = 0
+
+    def mismatched_replay(self: Any) -> str:
+        nonlocal digest_calls
+        digest_calls += 1
+        actual = digest_original(self)
+        return "0" * 64 if digest_calls == 2 else actual
+
+    monkeypatch.setattr(script.DiskCurrentProjection, "logical_digest", mismatched_replay)
+    with pytest.raises(script.RC8PartitionedBuildError, match="Independent replay"):
+        script.build_partitioned_candidate(
+            artifact_root=artifacts, projection_root=failure_root,
+            account_id=ACCOUNT, baseline_run_id=BASE,
+            delta_run_ids=(DELTA,), source_inventory=tmp_path / "source.json",
+            recovery_run_id=RECOVERY, batch_size=2,
+            min_free_gib=1, min_available_ram_gib=1,
+        )
+    assert digest_calls == 2
+    assert list(failure_root.rglob("*.parquet"))
+    assert not list(failure_root.rglob("projection-data.json"))
+    assert not list(failure_root.rglob("rc8-provenance.json"))
+    assert LocalProjectionStore(failure_root).load_current(ACCOUNT) is None
+
+    # Tampering with a previously completed candidate must fail offline audit.
+    parquet = (
+        projection_root / "accounts" / ACCOUNT / "projections"
+        / "candidate_data" / result["projection_id"]
+        / "normalized" / "messages.parquet"
+    )
+    with parquet.open("ab") as handle:
+        handle.write(b"tampered")
+    with pytest.raises(audit.RC8CandidateAuditError, match="integrity"):
+        audit.audit_candidate(
+            projection_root=projection_root, account_id=ACCOUNT,
+            projection_id=result["projection_id"],
+            source_inventory=tmp_path / "source.json",
+        )
