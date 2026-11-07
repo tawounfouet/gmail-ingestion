@@ -55,6 +55,7 @@ def test_partitioned_end_to_end_with_source_sample(
     script = importlib.import_module("materialize_rc8_partitioned_candidate")
     audit = importlib.import_module("audit_rc8_partitioned_candidate")
     parity = importlib.import_module("verify_rc8_source_parity")
+    exhaustive = importlib.import_module("verify_rc8_full_source_parity")
     artifacts = tmp_path / "artifacts"
     projection_root = tmp_path / "isolated"
     projection_root.mkdir()
@@ -192,3 +193,24 @@ def test_partitioned_end_to_end_with_source_sample(
     )
     assert live["sample_verified"] == 2
     assert live["current_pointer_promoted"] is False
+
+    monkeypatch.setattr(exhaustive, "_source", lambda _: (source_ids, source))
+    full = exhaustive.validate_full_source(
+        client=_Api(), account_id=ACCOUNT, artifact_root=artifacts,
+        projection_root=projection_root, baseline_run_id=BASE,
+        projection_id=result["projection_id"],
+        scoped_inventory=tmp_path / "source.json",
+        max_messages=2, batch_size=1, max_history_pages=2,
+    )
+    assert full["full_messages_verified"] == 2
+    assert full["full_mailbox_verified"] is True
+    assert full["stable_release_qualified"] is False
+
+    with pytest.raises(exhaustive.RC8FullSourceParityError, match="cap"):
+        exhaustive.validate_full_source(
+            client=_Api(), account_id=ACCOUNT, artifact_root=artifacts,
+            projection_root=projection_root, baseline_run_id=BASE,
+            projection_id=result["projection_id"],
+            scoped_inventory=tmp_path / "source.json",
+            max_messages=1,
+        )
