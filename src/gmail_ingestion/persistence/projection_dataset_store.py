@@ -7,7 +7,7 @@ import importlib
 import json
 import os
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -111,12 +111,28 @@ class NormalizedBaselineReader:
             raise ProjectionDatasetError(f"Baseline table {table_name!r} is invalid")
         return [cast(dict[str, Any], row) for row in rows]
 
-    def _read_segmented_table(
+    def iter_verified_segmented_table(
         self,
         run_id: UUID,
         table_name: str,
-    ) -> list[dict[str, Any]]:
-        """Read only a completed, hash-qualified segmented projection baseline."""
+        *,
+        max_rows_per_batch: int = 2048,
+    ) -> Iterator[list[dict[str, Any]]]:
+        """Yield bounded decoded batches from a verified segmented baseline.
+
+        Each segment is SHA-256 checked against immutable evidence before its
+        first batch is returned, and row counts are checked as the iterator
+        advances. Consumers MUST exhaust this iterator and check completion
+        before committing an output artifact. This method never collects the
+        entire baseline table in a single Python list.
+        """
+        if table_name not in TABLE_CONTRACTS:
+            raise ProjectionDatasetError("Unknown normalized baseline table")
+        if not isinstance(max_rows_per_batch, int) or isinstance(
+            max_rows_per_batch, bool
+        ) or not 1 <= max_rows_per_batch <= 65536:
+            raise ProjectionDatasetError("Invalid baseline batch row limit")
+
         try:
             manifest_raw = self.store.read_bytes(
                 self.store.uri_for(
@@ -125,7 +141,7 @@ class NormalizedBaselineReader:
             )
         except StorageError as exc:
             raise ProjectionDatasetError(
-                f"Missing normalized baseline table {table_name!r} for run {run_id}"
+                "Missing qualified segmented baseline manifest"
             ) from exc
         try:
             manifest = json.loads(manifest_raw)
@@ -149,16 +165,19 @@ class NormalizedBaselineReader:
             or total != (total_messages + batch_size - 1) // batch_size
         ):
             raise ProjectionDatasetError("Segmented baseline frontier metadata is invalid")
+
         pa = importlib.import_module("pyarrow")
         pq = importlib.import_module("pyarrow.parquet")
-        rows: list[dict[str, Any]] = []
+        rows_read = 0
         for index in range(total):
             prefix = f"segments/{index:08d}"
             try:
                 evidence = json.loads(
                     self.store.read_bytes(
                         self.store.uri_for(
-                            self.projection_baseline_job_id, run_id, f"{prefix}/segment.json"
+                            self.projection_baseline_job_id,
+                            run_id,
+                            f"{prefix}/segment.json",
                         )
                     )
                 )
@@ -180,22 +199,43 @@ class NormalizedBaselineReader:
                 or evidence.get("segment_index") != index
                 or evidence.get("start") != index * batch_size
                 or evidence.get("stop") != min((index + 1) * batch_size, total_messages)
-                or evidence.get("sha256", {}).get(table_name) != hashlib.sha256(raw).hexdigest()
+                or not isinstance(evidence.get("sha256"), dict)
+                or evidence["sha256"].get(table_name) != hashlib.sha256(raw).hexdigest()
+                or not isinstance(evidence.get("row_counts"), dict)
             ):
                 raise ProjectionDatasetError(
                     f"Segmented baseline digest/frontier mismatch for segment {index}"
                 )
-            table = pq.read_table(pa.BufferReader(raw))
-            if table.num_rows != evidence.get("row_counts", {}).get(table_name):
+
+            observed_segment_rows = 0
+            parquet = pq.ParquetFile(pa.BufferReader(raw))
+            for batch in parquet.iter_batches(batch_size=max_rows_per_batch):
+                decoded = cast(list[dict[str, Any]], batch.to_pylist())
+                if not decoded:
+                    continue
+                observed_segment_rows += len(decoded)
+                rows_read += len(decoded)
+                yield decoded
+
+            if observed_segment_rows != evidence["row_counts"].get(table_name):
                 raise ProjectionDatasetError(
                     f"Segmented baseline row count mismatch for segment {index}"
                 )
-            rows.extend(cast(list[dict[str, Any]], table.to_pylist()))
-        expected_count = manifest.get("row_counts", {}).get(table_name)
-        if len(rows) != expected_count:
+
+        if rows_read != manifest.get("row_counts", {}).get(table_name):
             raise ProjectionDatasetError(
                 f"Segmented baseline total row count mismatch for {table_name}"
             )
+
+    def _read_segmented_table(
+        self,
+        run_id: UUID,
+        table_name: str,
+    ) -> list[dict[str, Any]]:
+        """Existing eager API backed by the same verified streaming reader."""
+        rows: list[dict[str, Any]] = []
+        for chunk in self.iter_verified_segmented_table(run_id, table_name):
+            rows.extend(chunk)
         return rows
 
 
