@@ -23,8 +23,8 @@ from pyingestkit.artifacts.filesystem import LocalArtifactStore
 from verify_rc8_source_parity import _hash_file
 
 from gmail_ingestion import __version__
-from gmail_ingestion.api import GmailApiClient, GmailApiError, GmailHistoryExpiredError
-from gmail_ingestion.auth import GmailAuthError, build_provider
+from gmail_ingestion.api import GmailApiClient, GmailHistoryExpiredError
+from gmail_ingestion.auth import build_provider
 from gmail_ingestion.config import default_credential_dir
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.persistence import LocalProjectionStore
