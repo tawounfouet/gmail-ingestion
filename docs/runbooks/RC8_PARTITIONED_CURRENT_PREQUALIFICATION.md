@@ -145,10 +145,41 @@ incremental catchup, replan and recapture only current missing RAW with a
 new versioned candidate identity. Do not change the old source evidence.
 
 **A 32-message PASS does not prove all Gmail labels/threads/MIME.**
-Before stable, conduct independent full-source validation on the entire
-qualification scope or explicitly document a reviewed, narrower acceptance
-policy. The release issue currently requires full source-to-candidate parity.
-The local full-ID audit alone cannot discharge this gate.
+Before stable, the entire qualification scope must be compared to Gmail.
+A separate **explicitly opt-in exhaustive verifier** performs a sorted
+merge join over all candidate message tables and calls Gmail FULL once for
+each source ID without retaining message payloads. It checks message
+fields, labels, thread references and MIME/attachments for every ID, then
+replays History from the frozen frontier for the complete source cohort.
+
+**This is expensive** (for the current source: 181109 Gmail FULL GET
+requests plus History pages), may encounter rate limits or an expired
+History cursor and provides no automatic resume if interrupted. Run only
+after the 32-message smoke PASS, API quota assessment and deliberate
+operator authorization. Failure means NO-GO, not permission to skip IDs.
+
+```bash
+caffeinate -i env PYTHONPATH="$PWD/src" \
+  "$GMAIL_PY" scripts/verify_rc8_full_source_parity.py \
+  --account-id acct_84757009c00c40cf859cb796 \
+  --artifact-root .gmail-ingestion-live-0.5.0 \
+  --projection-root "$OUT_ROOT" \
+  --baseline-run-id c394dcbb-f5da-4ae0-abb8-c9e6dcf81479 \
+  --projection-id "$PROJECTION_ID" \
+  --source-inventory "$SCOPED" \
+  --max-messages 181109 \
+  --batch-size 2048 \
+  --max-history-pages 4000 \
+  --allow-exhaustive-full-reads
+```
+
+Expected only on full real-source convergence:
+`status=EXHAUSTIVE_SOURCE_PARITY_PASS_RELEASE_REVIEW_REQUIRED`,
+`full_messages_verified=181109` and
+`source_ids_labels_threads_mime_verified=true`. This still does not
+self-approve stable promotion. A failed or partially completed scan
+emits no certificate and should not trigger automatic retry or deletion.
+
 
 ## 5. Remaining gates
 
