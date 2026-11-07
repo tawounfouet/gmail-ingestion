@@ -20,7 +20,9 @@ from gmail_ingestion.domain import GmailAccount, GmailHistoryEvent, GmailHistory
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.projection.digest import logical_projection_digest
 from gmail_ingestion.projection.message_delta import (
-    CURRENT_PROJECTION_TABLES, MESSAGE_PROJECTION_TABLES, PreparedMessageDelta,
+    CURRENT_PROJECTION_TABLES,
+    MESSAGE_PROJECTION_TABLES,
+    PreparedMessageDelta,
 )
 
 ACCOUNT = "acct_0123456789abcdef01234567"
