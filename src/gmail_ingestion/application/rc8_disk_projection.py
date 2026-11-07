@@ -8,6 +8,7 @@ local. Neither this module nor its callers change a Gmail mailbox.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import sqlite3
@@ -18,8 +19,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+pa = importlib.import_module("pyarrow")
+pq = importlib.import_module("pyarrow.parquet")
 
 from gmail_ingestion.domain import GmailHistoryEvent, GmailHistoryEventType
 from gmail_ingestion.persistence.projection_dataset_store import (
