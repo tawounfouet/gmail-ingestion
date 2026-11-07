@@ -226,7 +226,7 @@ def main() -> int:
             max_messages=args.max_messages, batch_size=args.batch_size,
             max_history_pages=args.max_history_pages,
         )
-    except (OSError, ValueError, RuntimeError, TypeError, KeyError, GmailApiError, GmailAuthError) as exc:
+    except Exception as exc:  # noqa: BLE001 - never emit private Gmail context
         print("RC8 FULL SOURCE PARITY FAILED: exception_type=" + type(exc).__name__)
         if isinstance(exc, GmailHistoryExpiredError):
             print("reason=SOURCE_HISTORY_EXPIRED")
