@@ -31,7 +31,7 @@ from gmail_ingestion.projection.message_delta import (
     MESSAGE_PROJECTION_TABLES,
     PreparedMessageDelta,
 )
-from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION, TABLE_CONTRACTS, TABLE_SORT_KEYS
+from gmail_ingestion.schemas import TABLE_CONTRACTS, TABLE_SORT_KEYS
 
 
 class RC8DiskProjectionError(RuntimeError):
