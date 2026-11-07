@@ -327,7 +327,7 @@ def main() -> int:
             min_available_ram_gib=args.min_available_ram_gib,
             batch_size=args.batch_size,
         )
-    except (OSError, ValueError, RuntimeError, TypeError, KeyError) as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI redacts all unexpected errors
         print("RC8 PARTITIONED MATERIALIZATION FAILED: exception_type=" + type(exc).__name__)
         print("No Current promotion. Preserve staged files for investigation.")
         return 2
