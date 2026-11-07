@@ -9,7 +9,6 @@ source-consistency gate, not permission to promote an authoritative Current.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import itertools
 import json
 from collections.abc import Iterator
@@ -20,6 +19,7 @@ from typing import Any
 import pyarrow.parquet as pq
 from capture_rc8_current_source_evidence import _assert_stable_recovery_ids
 from plan_rc8_current_candidate import _source
+from pyingestkit.artifacts.filesystem import LocalArtifactStore
 from verify_rc8_source_parity import _hash_file
 
 from gmail_ingestion import __version__
