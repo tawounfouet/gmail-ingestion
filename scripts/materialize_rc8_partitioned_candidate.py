@@ -11,7 +11,6 @@ import argparse
 import gc
 import hashlib
 import json
-import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,18 +29,18 @@ from plan_rc8_current_candidate import _source, build_candidate_plan
 from pyingestkit.artifacts.filesystem import LocalArtifactStore
 
 from gmail_ingestion import __version__
-from gmail_ingestion.application.rc8_disk_projection import (
-    DiskCurrentProjection,
-    RC8DiskProjectionError,
-)
+from gmail_ingestion.application.rc8_disk_projection import DiskCurrentProjection
 from gmail_ingestion.normalization import normalize_snapshot
 from gmail_ingestion.persistence import (
-    LocalProjectionBatchReader, LocalProjectionStore, RawMessageWriter,
+    LocalProjectionBatchReader,
+    LocalProjectionStore,
+    RawMessageWriter,
 )
 from gmail_ingestion.persistence.projection_dataset_store import NormalizedBaselineReader
 from gmail_ingestion.projection import validate_delta_chain
 from gmail_ingestion.projection.message_delta import (
-    CURRENT_PROJECTION_TABLES, MESSAGE_PROJECTION_TABLES,
+    CURRENT_PROJECTION_TABLES,
+    MESSAGE_PROJECTION_TABLES,
 )
 from gmail_ingestion.schemas import NORMALIZED_SCHEMA_VERSION
 
