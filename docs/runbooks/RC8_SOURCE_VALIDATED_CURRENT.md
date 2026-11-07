@@ -389,3 +389,35 @@ après un nouvel essai **seulement** si le dossier candidat ne
 contient pas de fichiers partiels et les ressources sont suffisantes.
 Un `CANDIDATE_PARTIAL_OUTPUT_PRESENT` exige un examen explicite des
 traces avant toute action destructive.
+
+
+## 2026-11-07 - Infrastructure de lecture segmentée : première brique, PAS une reprise
+
+Après deux tentatives contrôlées, l'opérateur a obtenu
+`reason_code=AVAILABLE_RAM_BELOW_RESERVE` pour le matérialiseur RC8.
+Le contrôle non destructif suivant confirme **aucun processus actif**,
+**0 fichier candidat**, **0 octet** dans la racine isolée, et **38,27 Gio
+de RAM disponible sur 96 Gio**. Cela ne permet pas de conclure à une
+corruption des RAW : les 48/48 digests de récupération restent validés.
+
+La classe `NormalizedBaselineReader` fournit maintenant
+`iter_verified_segmented_table(run_id, table_name, max_rows_per_batch=2048)`.
+Le lecteur vérifie le manifeste et l'empreinte de chaque segment avant
+d'émettre ses lignes, puis impose les compteurs individuels et globaux
+jusqu'à épuisement du générateur. Les batches Arrow sont bornés ;
+l'ancienne API eager `read()` reste inchangée en comportement et
+continue à **charger toutes les lignes**.
+
+**Attention : ce changement ne réduit pas encore la RAM utilisée par
+`materialize_rc8_current_candidate.py`**, qui appelle encore
+`read()` et effectue une deuxième reconstruction complète. Il s'agit
+d'une brique préalable pour construire un pipeline out-of-core avec
+étapes de partition, réplication de hashes et validation déterministe.
+
+Pour la suite, écrire un nouveau matérialiseur explicitement versionné
+qui consomme ces batches sans les accumuler en RAM, applique les deltas
+History et l'overlay des RAW actuels avec provenance, produit des tables
+Parquet candidates isolées, puis valide les digests par un replay
+indépendant dans une deuxième passe mémoire-bornée. Les outputs sont
+uniquement candidats. Ne pas réduire les réserves RAM, ni relancer
+l'ancienne commande : stable 0.5.0 et le pointeur Current restent NO-GO.
