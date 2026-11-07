@@ -19,9 +19,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-pa = importlib.import_module("pyarrow")
-pq = importlib.import_module("pyarrow.parquet")
-
 from gmail_ingestion.domain import GmailHistoryEvent, GmailHistoryEventType
 from gmail_ingestion.persistence.projection_dataset_store import (
     NormalizedBaselineReader,
@@ -33,6 +30,9 @@ from gmail_ingestion.projection.message_delta import (
     PreparedMessageDelta,
 )
 from gmail_ingestion.schemas import TABLE_CONTRACTS, TABLE_SORT_KEYS
+
+pa = importlib.import_module("pyarrow")
+pq = importlib.import_module("pyarrow.parquet")
 
 
 class RC8DiskProjectionError(RuntimeError):
