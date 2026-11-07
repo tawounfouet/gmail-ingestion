@@ -213,12 +213,20 @@ def build_partitioned_candidate(
             disk.close()
             gc.collect()
 
+    first_database = work_root / "build.sqlite3"
     digest, counts, diagnostics, physical = run_pass(
-        work_root / "build.sqlite3", replay=False, write=True
+        first_database, replay=False, write=True
     )
     first_digest = dict(physical)
     if set(first_digest) != set(CURRENT_PROJECTION_TABLES):
         raise RC8PartitionedBuildError("Missing exported normalized table")
+    # The first isolated scratch database is no longer required after its
+    # complete Parquet export. Delete only this newly created transient file,
+    # never historical source evidence, before the independent second pass.
+    # This bounds peak disk usage while leaving written candidate Parquet
+    # untouched. On a failed first pass all scratch files are preserved.
+    first_database.unlink()
+    guard("replay_before_baseline")
     replay_digest, replay_counts, _, _ = run_pass(
         work_root / "replay.sqlite3", replay=True, write=False
     )
