@@ -8,15 +8,14 @@ import json
 from typing import Any
 from uuid import UUID
 
-import pytest
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from gmail_ingestion.persistence.projection_dataset_store import (
     NormalizedBaselineReader,
     ProjectionDatasetError,
 )
-
 
 RUN = UUID("00000000-0000-0000-0000-000000009901")
 TABLE = "message_headers"
