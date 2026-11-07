@@ -213,7 +213,7 @@ def main() -> int:
             projection_id=args.projection_id, source_inventory=args.source_inventory,
             batch_size=args.batch_size,
         )
-    except (OSError, ValueError, RuntimeError, TypeError, KeyError) as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI redacts all unexpected errors
         print("RC8 CURRENT AUDIT FAILED: exception_type=" + type(exc).__name__)
         return 2
     print(json.dumps(report, sort_keys=True, indent=2))
